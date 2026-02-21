@@ -231,14 +231,14 @@ function startGraphAnimation(fullHistory, iterations, finalDist, originalDist) {
             statDist.textContent = fullHistory[idx].toFixed(1) + ' mm';
             
             if (idx === 0) {
-                statIter.textContent = 'ORIG';
-            } else if (idx === 1) {
-                statIter.textContent = 'NN PASS';
+                statIter.textContent = 'BASELINE';
             } else {
-                statIter.textContent = `${idx - 1} / ${iterations}`;
+                statIter.textContent = `${idx} / ${iterations}`;
             }
             
-            const saved = ((originalDist - fullHistory[idx]) / originalDist * 100);
+            const saved = originalDist > 0
+                ? ((originalDist - fullHistory[idx]) / originalDist * 100)
+                : 0;
             statSavings.textContent = saved.toFixed(1) + '%';
             
             drawGraph();

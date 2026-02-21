@@ -83,28 +83,34 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
     stats = result['stats']
     
     # Send Phase 2 results
+    phase1_base = stats['phase1_penup_dist']
     savings_pct = 0
-    if stats['original_penup_dist'] > 0:
-        savings_pct = (1 - stats['final_penup_dist'] / stats['original_penup_dist']) * 100
+    if phase1_base > 0:
+        savings_pct = (1 - stats['final_penup_dist'] / phase1_base) * 100
     
     await websocket.send_json({"type": "log", "msg": f"2-Opt converged: {stats['phase2_iterations']} iterations"})
     await websocket.send_json({
         "type": "log",
-        "msg": f"Travel: {stats['original_penup_dist']:.1f}mm -> {stats['final_penup_dist']:.1f}mm ({savings_pct:.1f}% reduction)"
+        "msg": (
+            f"Travel: {stats['original_penup_dist']:.1f}mm (gcode) -> "
+            f"{phase1_base:.1f}mm (NN) -> {stats['final_penup_dist']:.1f}mm "
+            f"({savings_pct:.1f}% NN refinement)"
+        )
     })
     
     paths_data = [[{"x": p[0], "y": p[1]} for p in path.points] for path in optimized_paths]
     
-    # Prepend original distance to history for a dramatic full-journey graph
-    full_history = [stats['original_penup_dist']] + stats['phase2_dist_history']
+    # Use phase-1 baseline for 2-opt graph to avoid a misleading jump
+    full_history = stats['phase2_dist_history']
     
     await websocket.send_json({
         "type": "phase2_result",
         "iterations": stats['phase2_iterations'],
         "dist_history": full_history,
         "paths": paths_data,
-        "original_dist": stats['original_penup_dist'],
-        "phase1_dist": stats['phase1_penup_dist'],
+        "original_dist": phase1_base,
+        "gcode_dist": stats['original_penup_dist'],
+        "phase1_dist": phase1_base,
         "final_dist": stats['final_penup_dist'],
     })
     
