@@ -196,6 +196,53 @@ class GcodeOptimizer:
         
         return optimized, progress_history
 
+    def merge_adjacent_paths(self, paths, threshold):
+        """
+        Merge adjacent paths if the gap between one's end and the next's start
+        is smaller than threshold. This eliminates unnecessary pen lifts.
+        
+        Args:
+            paths: List of Path objects (already sorted)
+            threshold: Maximum distance in mm to merge across (0 = disabled)
+        
+        Returns:
+            (merged_paths, merge_stats) where merge_stats contains merge info
+        """
+        if not paths or threshold <= 0:
+            return paths, {'merge_count': 0, 'original_count': len(paths) if paths else 0}
+        
+        merged = []
+        current_path_points = list(paths[0].points)
+        merge_count = 0
+        
+        for i in range(1, len(paths)):
+            next_path = paths[i]
+            gap = dist(current_path_points[-1], next_path.start)
+            
+            if gap <= threshold:
+                # Merge: extend current path with next path's points
+                # (optionally skip the first point if it's very close to avoid duplicate)
+                if gap < 0.001:
+                    # Points are essentially the same, skip duplicate
+                    current_path_points.extend(next_path.points[1:])
+                else:
+                    # Include all points (small gap will become a connecting line)
+                    current_path_points.extend(next_path.points)
+                merge_count += 1
+            else:
+                # Gap too large, finalize current path and start new one
+                merged.append(Path(current_path_points))
+                current_path_points = list(next_path.points)
+        
+        # Don't forget the last accumulated path
+        merged.append(Path(current_path_points))
+        
+        return merged, {
+            'merge_count': merge_count,
+            'original_count': len(paths),
+            'merged_count': len(merged)
+        }
+
     def two_opt_sync(self, paths):
         """
         Phase 2: 2-Opt refinement (synchronous, runs in C).

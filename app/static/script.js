@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
     curve_tolerance: 0.1,
     pen_width: 0,
     visibility_threshold: 50,
+    merge_threshold: 0.5,
     gcode_header: 'G28',
     gcode_footer: 'G0 Z5\nG0 X10 Y10\nM84',
 };
@@ -36,6 +37,7 @@ function applySettingsToForm(s) {
     document.getElementById('set-curve-tolerance').value = s.curve_tolerance;
     document.getElementById('set-pen-width').value = s.pen_width;
     document.getElementById('set-visibility-threshold').value = s.visibility_threshold;
+    document.getElementById('set-merge-threshold').value = s.merge_threshold;
     document.getElementById('set-gcode-header').value = s.gcode_header;
     document.getElementById('set-gcode-footer').value = s.gcode_footer;
     
@@ -54,6 +56,7 @@ function readSettingsFromForm() {
         curve_tolerance: parseFloat(document.getElementById('set-curve-tolerance').value),
         pen_width: parseFloat(document.getElementById('set-pen-width').value),
         visibility_threshold: parseFloat(document.getElementById('set-visibility-threshold').value),
+        merge_threshold: parseFloat(document.getElementById('set-merge-threshold').value),
         gcode_header: document.getElementById('set-gcode-header').value,
         gcode_footer: document.getElementById('set-gcode-footer').value,
     };

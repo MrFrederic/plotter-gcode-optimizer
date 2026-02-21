@@ -147,20 +147,62 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
         }
     )
 
+    # ── Path Merging (optional) ──────────────────────────────────────────────
+    merge_threshold = float(settings.get("merge_threshold", 0))
+    paths_to_optimize = greedy_paths
+    
+    if merge_threshold > 0:
+        await websocket.send_json(
+            {"type": "log", "msg": f"Merging adjacent paths (threshold: {merge_threshold:.2f}mm)..."}
+        )
+        
+        merged_paths, merge_stats = opt.merge_adjacent_paths(greedy_paths, merge_threshold)
+        
+        if merge_stats["merge_count"] > 0:
+            post_merge_dist = opt.calculate_penup_distance(merged_paths)
+            
+            # Serialize merged results for UI
+            merged_paths_data = [[{"x": p[0], "y": p[1]} for p in path.points] for path in merged_paths]
+            
+            await websocket.send_json(
+                {
+                    "type": "merge_result",
+                    "paths": merged_paths_data,
+                    "original_count": merge_stats["original_count"],
+                    "merged_count": merge_stats["merged_count"],
+                    "merge_count": merge_stats["merge_count"],
+                    "post_merge_dist": post_merge_dist,
+                }
+            )
+            
+            await websocket.send_json(
+                {
+                    "type": "log",
+                    "msg": f"Merged {merge_stats['merge_count']} path pairs: {merge_stats['original_count']} → {merge_stats['merged_count']} paths",
+                }
+            )
+            
+            paths_to_optimize = merged_paths
+            phase1_dist = post_merge_dist
+        else:
+            await websocket.send_json(
+                {"type": "log", "msg": "No paths within merge threshold"}
+            )
+
     # ── Phase 2: 2-OPT (runs in background thread) ───────────────────────────
     await websocket.send_json(
         {"type": "log", "msg": "Starting 2-Opt refinement..."}
     )
     
     # Notify UI that 2-OPT is starting
-    await websocket.send_json({"type": "twoopt_start", "estimated_paths": len(greedy_paths)})
+    await websocket.send_json({"type": "twoopt_start", "estimated_paths": len(paths_to_optimize)})
     
     # Run 2-OPT in thread pool to not block
     import concurrent.futures
     loop = asyncio.get_event_loop()
     
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        future = loop.run_in_executor(executor, opt.two_opt_sync, greedy_paths)
+        future = loop.run_in_executor(executor, opt.two_opt_sync, paths_to_optimize)
         
         # Keep websocket alive during long operation by sending periodic pings
         while not future.done():

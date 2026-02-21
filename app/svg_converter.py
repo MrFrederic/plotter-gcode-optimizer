@@ -30,6 +30,40 @@ ET.register_namespace("inkscape", "http://www.inkscape.org/namespaces/inkscape")
 _POINTS_RE = re.compile(r"[-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?")
 _XML_DECL_RE = re.compile(r"<\?xml[^>]*\?>")
 
+# Unit conversion factors to millimeters (1 unit = X mm)
+# CSS reference pixel is 1/96 inch; pt is 1/72 inch
+_UNIT_TO_MM = {
+    "mm": 1.0,
+    "cm": 10.0,
+    "in": 25.4,
+    "px": 25.4 / 96.0,  # CSS px at 96 DPI
+    "pt": 25.4 / 72.0,
+    "pc": 25.4 / 6.0,   # 1 pica = 12 pt = 1/6 inch
+}
+
+
+def _parse_length(s: str) -> tuple[float, str]:
+    """Parse an SVG length value and return (number, unit).
+
+    If no unit is specified, returns 'px' as the default (per SVG spec).
+    """
+    if s is None:
+        return 0.0, "px"
+    s = s.strip()
+    match = re.match(r"^([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s*([a-zA-Z%]*)$", s)
+    if not match:
+        return 0.0, "px"
+    num = float(match.group(1))
+    unit = match.group(2).lower() if match.group(2) else "px"
+    return num, unit
+
+
+def _length_to_mm(s: str) -> float:
+    """Convert an SVG length string to millimeters."""
+    num, unit = _parse_length(s)
+    factor = _UNIT_TO_MM.get(unit, 25.4 / 96.0)  # Default to px if unknown
+    return num * factor
+
 
 def _f(s) -> float:
     """Parse a float, stripping common SVG unit suffixes."""
@@ -150,6 +184,81 @@ def _preprocess_svg(svg_bytes: bytes) -> bytes:
         return svg_bytes
 
 
+def _compute_viewbox_scale(svg_bytes: bytes) -> tuple[float, float] | None:
+    """Compute the scale factor to convert viewBox units to mm.
+
+    SVG coordinates are in viewBox units. To get the correct physical size,
+    we need to scale them by (viewport size in mm) / (viewBox size).
+
+    Returns:
+        A tuple (scale_x, scale_y) or None if no scaling is needed.
+    """
+    try:
+        text = svg_bytes.decode("utf-8", errors="replace")
+        text_clean = _XML_DECL_RE.sub("", text).strip()
+        root = ET.fromstring(text_clean)
+    except ET.ParseError:
+        return None
+
+    viewbox_attr = root.get("viewBox")
+    width_attr = root.get("width")
+    height_attr = root.get("height")
+
+    # If there's no viewBox, svg2gcode uses viewport dimensions directly (in user units)
+    if not viewbox_attr:
+        # No viewBox means coordinates are already in viewport space.
+        # If viewport has units, we still need to convert to mm.
+        if width_attr and height_attr:
+            # Check if viewport has units that need conversion
+            vp_width_mm = _length_to_mm(width_attr)
+            vp_height_mm = _length_to_mm(height_attr)
+            # Strip units to get the numeric viewport values
+            vp_width_num, _ = _parse_length(width_attr)
+            vp_height_num, _ = _parse_length(height_attr)
+            if vp_width_num > 0 and vp_height_num > 0:
+                scale_x = vp_width_mm / vp_width_num
+                scale_y = vp_height_mm / vp_height_num
+                # Only return scale if it differs from 1.0
+                if abs(scale_x - 1.0) > 0.0001 or abs(scale_y - 1.0) > 0.0001:
+                    return (scale_x, scale_y)
+        return None
+
+    # Parse viewBox: "min-x min-y width height"
+    vb_parts = viewbox_attr.split()
+    if len(vb_parts) < 4:
+        return None
+
+    try:
+        vb_width = float(vb_parts[2])
+        vb_height = float(vb_parts[3])
+    except (ValueError, IndexError):
+        return None
+
+    if vb_width <= 0 or vb_height <= 0:
+        return None
+
+    # Get viewport dimensions in mm
+    # If no viewport specified, assume viewBox dimensions are in mm (no scaling)
+    if not width_attr or not height_attr:
+        return None
+
+    vp_width_mm = _length_to_mm(width_attr)
+    vp_height_mm = _length_to_mm(height_attr)
+
+    if vp_width_mm <= 0 or vp_height_mm <= 0:
+        return None
+
+    # Compute scale factors
+    scale_x = vp_width_mm / vb_width
+    scale_y = vp_height_mm / vb_height
+
+    # Only return scale if it actually differs from 1.0
+    if abs(scale_x - 1.0) < 0.0001 and abs(scale_y - 1.0) < 0.0001:
+        return None
+
+    return (scale_x, scale_y)
+
+
 def convert_svg_to_gcode(svg_bytes: bytes, settings: dict) -> str:
     """Convert SVG content to plotter G-code.
 
@@ -177,6 +286,10 @@ def convert_svg_to_gcode(svg_bytes: bytes, settings: dict) -> str:
 
     # Normalise shapes → paths before handing to svg2gcode
     processed_svg = _preprocess_svg(svg_bytes)
+
+    # Compute scale factor to convert viewBox units to mm
+    # This corrects the common case where viewBox dimensions differ from viewport dimensions
+    scale_factor = _compute_viewbox_scale(svg_bytes)
 
     # svg2gcode's parse_file requires an actual file path, so we still need a
     # temporary file for the SVG input — but we compile entirely in memory to
@@ -214,7 +327,8 @@ def convert_svg_to_gcode(svg_bytes: bytes, settings: dict) -> str:
         )
 
         # draw_hidden=True includes paths with display/visibility styling applied
-        curves = parse_file(svg_path, draw_hidden=True)
+        # scale_factor converts viewBox units to mm based on viewport dimensions
+        curves = parse_file(svg_path, draw_hidden=True, scale_factor=scale_factor)
         # Set svg_file_name so gcode_file_header() has access to the source path
         compiler.svg_file_name = svg_path
         compiler.append_curves(curves)
