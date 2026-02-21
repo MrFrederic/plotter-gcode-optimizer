@@ -38,6 +38,10 @@ async def upload_file(
         "z_down": opt.z_down,
         "feedrate": opt.feedrate,
         "travel_speed": opt.travel_speed,
+        "z_speed": opt.z_speed,
+        "max_iterations": opt.max_iterations,
+        "gcode_header": opt.gcode_header,
+        "gcode_footer": opt.gcode_footer,
     }
     return {"job_id": job_id, "paths": serializable_paths}
 
@@ -55,6 +59,10 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
     opt.z_down = job["z_down"]
     opt.feedrate = job["feedrate"]
     opt.travel_speed = job["travel_speed"]
+    opt.z_speed = job["z_speed"]
+    opt.max_iterations = job["max_iterations"]
+    opt.gcode_header = job["gcode_header"]
+    opt.gcode_footer = job["gcode_footer"]
     paths = job["paths"]
 
     await websocket.send_json({"type": "log", "msg": "Initializing CyberPlotter Core..."})
@@ -175,3 +183,11 @@ def _apply_settings(opt: GcodeOptimizer, settings: dict):
         opt.feedrate = float(settings["feedrate"])
     if "travel_speed" in settings:
         opt.travel_speed = float(settings["travel_speed"])
+    if "z_speed" in settings:
+        opt.z_speed = float(settings["z_speed"])
+    if "max_iterations" in settings:
+        opt.max_iterations = max(50, min(1000, int(settings["max_iterations"])))
+    if "gcode_header" in settings:
+        opt.gcode_header = str(settings["gcode_header"])
+    if "gcode_footer" in settings:
+        opt.gcode_footer = str(settings["gcode_footer"])

@@ -366,9 +366,12 @@ canvas {
     border: 1px solid var(--border);
     border-top: 2px solid var(--accent);
     min-width: 380px;
-    max-width: 480px;
+    max-width: 520px;
     width: 100%;
     position: relative;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
 }
 
 .settings-panel .panel-header {
@@ -393,6 +396,8 @@ canvas {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    overflow-y: auto;
+}
 }
 
 .settings-group {
@@ -428,6 +433,14 @@ canvas {
     width: 120px;
     text-align: right;
     transition: border-color 0.2s;
+    /* Remove native spin buttons */
+    -moz-appearance: textfield;
+}
+
+.cyber-input::-webkit-outer-spin-button,
+.cyber-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
 
 .cyber-input:focus {
@@ -445,4 +458,60 @@ canvas {
     flex: 1;
     padding: 10px;
     font-size: 0.8rem;
+}
+
+/* Vertical settings row for multi-line inputs (textarea) */
+.settings-row-vertical {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.cyber-textarea {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border);
+    color: var(--secondary);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.8rem;
+    padding: 6px 10px;
+    width: 100%;
+    resize: vertical;
+    transition: border-color 0.2s;
+    line-height: 1.5;
+}
+
+.cyber-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* ─── SVG Preview Pane ────────────────────────────────────────────────────── */
+
+#svg-preview-pane {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    z-index: 2;
+    gap: 12px;
+}
+
+.svg-preview-label {
+    font-size: 0.7rem;
+    letter-spacing: 3px;
+    color: var(--accent);
+    opacity: 0.8;
+}
+
+#svg-preview-img {
+    max-width: 85%;
+    max-height: 80%;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    filter: invert(0.85) hue-rotate(160deg) brightness(0.9);
+    box-shadow: 0 0 20px rgba(255, 107, 0, 0.15);
 }

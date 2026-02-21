@@ -49,5 +49,9 @@ async def upload_svg(
         "z_down": opt.z_down,
         "feedrate": opt.feedrate,
         "travel_speed": opt.travel_speed,
+        "z_speed": opt.z_speed,
+        "max_iterations": opt.max_iterations,
+        "gcode_header": opt.gcode_header,
+        "gcode_footer": opt.gcode_footer,
     }
     return {"job_id": job_id, "paths": serializable_paths, "source": "svg"}

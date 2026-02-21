@@ -31,8 +31,9 @@ def convert_svg_to_gcode(svg_bytes: bytes, settings: dict) -> str:
     """
     z_up = float(settings.get("z_up", 2.0))
     z_down = float(settings.get("z_down", 0.0))
-    # Precedence: explicit cutting_speed > feedrate fallback > default 1000
-    cutting_speed = int(settings.get("cutting_speed") or settings.get("feedrate") or 1000)
+    feedrate = int(settings.get("feedrate") or 1000)
+    # curve_tolerance maps to svg2gcode pixel_size (curve discretization step in mm)
+    curve_tolerance = float(settings.get("curve_tolerance") or 0.1)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         svg_path = os.path.join(tmpdir, "input.svg")
@@ -45,10 +46,10 @@ def convert_svg_to_gcode(svg_bytes: bytes, settings: dict) -> str:
             interfaces.Gcode,
             params={
                 "laser_power": 0,
-                "movement_speed": cutting_speed,
-                "pixel_size": 0.1,
+                "movement_speed": feedrate,
+                "pixel_size": curve_tolerance,
                 "maximum_image_laser_power": 0,
-                "image_movement_speed": cutting_speed,
+                "image_movement_speed": feedrate,
                 "fan": False,
                 "rapid_move": 10,
                 "showimage": False,
