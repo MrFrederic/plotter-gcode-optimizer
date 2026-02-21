@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CYBERPLOTTER // G-CODE OPTIMIZER</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="scanline"></div>
+    <div class="container">
+        <header>
+            <h1>SYS.OP // CYBERPLOTTER_V1.0</h1>
+            <div class="status-bar">
+                <div class="status-indicator" id="status-dot"></div>
+                <span id="status-text">STATUS: IDLE</span>
+                <span class="blinking-cursor">_</span>
+            </div>
+        </header>
+        
+        <main>
+            <div class="panel left-panel">
+                <div class="panel-header">TERMINAL OUTPUT</div>
+                <div class="terminal" id="terminal">
+                    <div>> SYSTEM READY. AWAITING G-CODE INPUT...</div>
+                </div>
+                <div class="controls">
+                    <input type="file" id="file-input" accept=".gcode,.nc,.txt" class="hidden">
+                    <button id="btn-upload" class="cyber-btn">SELECT FILE</button>
+                    <button id="btn-optimize" class="cyber-btn disabled" disabled>EXECUTE OPTIMIZATION</button>
+                    <button id="btn-download" class="cyber-btn hidden">DOWNLOAD RESULT</button>
+                </div>
+            </div>
+            
+            <div class="panel right-panel">
+                <div class="panel-header">TOOLPATH VISUALIZATION</div>
+                <div class="canvas-container">
+                    <canvas id="viz-canvas"></canvas>
+                    <div class="overlay-stats" id="stats">
+                        PATHS: <span id="stat-paths">0 / 0</span><br>
+                        OPTIMIZED: <span id="stat-opt">0%</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>

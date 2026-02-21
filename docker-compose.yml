@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  gcode-optimizer:
+    build: .
+    ports:
+      - "8080:8000"
+    volumes:
+      - ./app:/app/app
+    environment:
+      - PYTHONUNBUFFERED=1
