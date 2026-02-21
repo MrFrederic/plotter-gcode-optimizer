@@ -1,5 +1,7 @@
 # PLOTTERTOOL // MFCORP UTILS
 
+**LIVE DEPLOYMENT:** https://mfihs.com/plotter-tool/
+
 ## SYSTEM OVERVIEW
 
 Integrated toolpath optimization platform for CNC pen plotters. Converts vector graphics to machine-executable G-code with automated path reduction and overlap elimination. Real-time telemetry visualization included.
@@ -70,6 +72,10 @@ All operational parameters (feed rates, Z-axis control, curve tolerance, pen wid
 ## DEPENDENCIES
 
 This system incorporates [svg2gcode](https://github.com/sameer/svg2gcode) for SVG decomposition and G-code generation. Path optimization and overlap filtering are implemented internally.
+
+## DISCLAIMER
+
+This application was shamelessly vibe-coded by an individual whose close-to-zero coding skills are a source of deep, profound shame. The code quality reflects this unfortunate reality. Proceed with appropriate caution.
 
 ---
 
