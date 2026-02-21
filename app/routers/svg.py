@@ -50,7 +50,6 @@ async def upload_svg(
         "feedrate": opt.feedrate,
         "travel_speed": opt.travel_speed,
         "z_speed": opt.z_speed,
-        "max_iterations": opt.max_iterations,
         "gcode_header": opt.gcode_header,
         "gcode_footer": opt.gcode_footer,
     }

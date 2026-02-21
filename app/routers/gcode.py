@@ -7,6 +7,7 @@ from fastapi.responses import PlainTextResponse
 
 from app.optimizer import GcodeOptimizer
 from app.state import jobs
+from app.line_filter import apply_pen_filter
 
 router = APIRouter()
 
@@ -39,7 +40,6 @@ async def upload_file(
         "feedrate": opt.feedrate,
         "travel_speed": opt.travel_speed,
         "z_speed": opt.z_speed,
-        "max_iterations": opt.max_iterations,
         "gcode_header": opt.gcode_header,
         "gcode_footer": opt.gcode_footer,
     }
@@ -60,12 +60,11 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
     opt.feedrate = job["feedrate"]
     opt.travel_speed = job["travel_speed"]
     opt.z_speed = job["z_speed"]
-    opt.max_iterations = job["max_iterations"]
     opt.gcode_header = job["gcode_header"]
     opt.gcode_footer = job["gcode_footer"]
     paths = job["paths"]
 
-    await websocket.send_json({"type": "log", "msg": "Initializing CyberPlotter Core..."})
+    await websocket.send_json({"type": "log", "msg": "Initializing PlotterTool Core..."})
     await asyncio.sleep(0.5)
 
     await websocket.send_json(
@@ -75,81 +74,144 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
         }
     )
 
+    # ── Line filter phase ────────────────────────────────────────────────────
+    settings = job.get("settings", {})
+    pw = float(settings.get("pen_width", 0))
+    if pw > 0:
+        vt = float(settings.get("visibility_threshold", 50))
+        await websocket.send_json(
+            {"type": "log", "msg": "Initializing coverage analysis subsystem..."}
+        )
+        await websocket.send_json(
+            {
+                "type": "filter_start",
+                "path_count": len(paths),
+                "pen_width": pw,
+                "visibility_threshold": vt,
+            }
+        )
+
+        # Run the actual filter
+        filtered, filter_stats = apply_pen_filter(paths, settings)
+        removed_count = filter_stats["removed_count"] if filter_stats else 0
+
+        await websocket.send_json(
+            {
+                "type": "filter_result",
+                "original_count": len(paths),
+                "removed_count": removed_count,
+                "kept_count": len(filtered),
+                "removed_indices": filter_stats["removed_indices"] if filter_stats else [],
+                "pen_width": pw,
+                "visibility_threshold": vt,
+            }
+        )
+
+        paths = filtered
+        job["paths"] = paths
+
+        await websocket.send_json(
+            {
+                "type": "log",
+                "msg": f"Coverage scan: {removed_count} paths eliminated, {len(paths)} remaining",
+            }
+        )
+
     await websocket.send_json(
         {"type": "log", "msg": "Deploying Greedy Nearest-Neighbor heuristic..."}
     )
 
-    async def progress(phase, current, total, latest_path=None):
-        if phase == 1:
-            if latest_path:
-                pts = [{"x": p[0], "y": p[1]} for p in latest_path.points]
-                await websocket.send_json(
-                    {
-                        "type": "progress",
-                        "phase": 1,
-                        "current": current,
-                        "total": total,
-                        "latest_path": pts,
-                    }
-                )
-                await asyncio.sleep(0.01)
-        elif phase == 2:
-            await websocket.send_json(
-                {
-                    "type": "log",
-                    "msg": "Phase 1 complete. Initializing 2-Opt refinement subsystem...",
-                }
-            )
-            await asyncio.sleep(0.3)
-            await websocket.send_json(
-                {"type": "log", "msg": "Loading native path-inversion kernels..."}
-            )
-            await asyncio.sleep(0.2)
-            await websocket.send_json(
-                {"type": "log", "msg": "Executing bidirectional route optimization..."}
-            )
-        elif phase == 3:
-            pass  # handled below
+    # ── Phase 1: Greedy Sort ─────────────────────────────────────────────────
+    original_dist = opt.calculate_penup_distance(paths)
+    greedy_paths, greedy_history = opt.greedy_sort(paths)
+    phase1_dist = opt.calculate_penup_distance(greedy_paths)
+    
+    # Serialize greedy results for UI
+    greedy_paths_data = [[{"x": p[0], "y": p[1]} for p in path.points] for path in greedy_paths]
+    
+    await websocket.send_json(
+        {
+            "type": "greedy_result",
+            "paths": greedy_paths_data,
+            "progress_history": greedy_history,
+            "original_dist": original_dist,
+            "phase1_dist": phase1_dist,
+            "path_count": len(greedy_paths)
+        }
+    )
+    
+    await websocket.send_json(
+        {
+            "type": "log",
+            "msg": f"Greedy sort complete: {original_dist:.1f}mm → {phase1_dist:.1f}mm travel",
+        }
+    )
 
-    result = await opt.optimize(paths, progress_callback=progress)
-    optimized_paths = result["paths"]
-    stats = result["stats"]
+    # ── Phase 2: 2-OPT (runs in background thread) ───────────────────────────
+    await websocket.send_json(
+        {"type": "log", "msg": "Starting 2-Opt refinement..."}
+    )
+    
+    # Notify UI that 2-OPT is starting
+    await websocket.send_json({"type": "twoopt_start", "estimated_paths": len(greedy_paths)})
+    
+    # Run 2-OPT in thread pool to not block
+    import concurrent.futures
+    loop = asyncio.get_event_loop()
+    
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = loop.run_in_executor(executor, opt.two_opt_sync, greedy_paths)
+        
+        # Keep websocket alive during long operation by sending periodic pings
+        while not future.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(future), timeout=5.0)
+            except asyncio.TimeoutError:
+                # Send a lightweight keepalive message to prevent timeout
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except:
+                    pass
+        
+        optimized_paths, twoopt_stats = await future
 
-    phase1_base = stats["phase1_penup_dist"]
+    iterations = twoopt_stats["iterations"]
+    full_history = twoopt_stats["dist_history"]
+    final_dist = twoopt_stats["final_dist"]
+
     savings_pct = 0
-    if phase1_base > 0:
-        savings_pct = (1 - stats["final_penup_dist"] / phase1_base) * 100
+    if phase1_dist > 0:
+        savings_pct = (1 - final_dist / phase1_dist) * 100
 
     await websocket.send_json(
         {
             "type": "log",
-            "msg": f"2-Opt converged: {stats['phase2_iterations']} iterations",
+            "msg": f"2-Opt converged: {iterations} iterations",
         }
     )
     await websocket.send_json(
         {
             "type": "log",
             "msg": (
-                f"Travel: {stats['original_penup_dist']:.1f}mm (gcode) -> "
-                f"{phase1_base:.1f}mm (NN) -> {stats['final_penup_dist']:.1f}mm "
+                f"Travel: {original_dist:.1f}mm (gcode) → "
+                f"{phase1_dist:.1f}mm (NN) → {final_dist:.1f}mm "
                 f"({savings_pct:.1f}% NN refinement)"
             ),
         }
     )
 
     paths_data = [[{"x": p[0], "y": p[1]} for p in path.points] for path in optimized_paths]
-    full_history = stats["phase2_dist_history"]
 
     await websocket.send_json(
         {
             "type": "phase2_result",
-            "iterations": stats["phase2_iterations"],
+            "iterations": iterations,
             "dist_history": full_history,
             "paths": paths_data,
-            "original_dist": phase1_base,
-            "gcode_dist": stats["original_penup_dist"],
-            "phase1_dist": phase1_base,
-            "final_dist": stats["final_penup_dist"],
+            "original_dist": phase1_dist,
+            "gcode_dist": original_dist,
+            "phase1_dist": phase1_dist,
+            "final_dist": final_dist,
         }
     )
 
@@ -185,8 +247,6 @@ def _apply_settings(opt: GcodeOptimizer, settings: dict):
         opt.travel_speed = float(settings["travel_speed"])
     if "z_speed" in settings:
         opt.z_speed = float(settings["z_speed"])
-    if "max_iterations" in settings:
-        opt.max_iterations = max(50, min(1000, int(settings["max_iterations"])))
     if "gcode_header" in settings:
         opt.gcode_header = str(settings["gcode_header"])
     if "gcode_footer" in settings:

@@ -169,6 +169,15 @@ main {
     margin-right: 10px;
 }
 
+.quick-settings {
+    padding: 15px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 1;
+}
+
 .terminal {
     flex: 1;
     padding: 15px;
@@ -210,6 +219,22 @@ main {
     gap: 10px;
     z-index: 1;
     background: rgba(0,0,0,0.2);
+}
+
+.svg-progress-container {
+    width: 100%;
+    height: 4px;
+    background: rgba(160, 170, 181, 0.1);
+    margin-top: 5px;
+    position: relative;
+    overflow: hidden;
+}
+
+.svg-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width 0.1s linear;
 }
 
 .hidden {
@@ -514,4 +539,154 @@ canvas {
     background: rgba(255, 255, 255, 0.04);
     filter: invert(0.85) hue-rotate(160deg) brightness(0.9);
     box-shadow: 0 0 20px rgba(255, 107, 0, 0.15);
+}
+
+/* ─── Line Filter Panel ──────────────────────────────────────────────────── */
+
+.filter-panel {
+    position: absolute;
+    bottom: 15px;
+    left: 15px;
+    width: 240px;
+    background: rgba(18, 20, 24, 0.88);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--accent);
+    pointer-events: none;
+    display: none;
+    padding: 10px 12px;
+    font-size: 0.75rem;
+    z-index: 3;
+}
+
+.filter-panel.visible {
+    display: block;
+    animation: filterReveal 0.4s ease-out;
+}
+
+@keyframes filterReveal {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.filter-panel-header {
+    color: rgba(160, 170, 181, 0.5);
+    font-size: 0.6rem;
+    letter-spacing: 1.5px;
+    margin-bottom: 8px;
+}
+
+.filter-bar-track {
+    position: relative;
+    height: 6px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(45, 55, 72, 0.6);
+    margin-bottom: 10px;
+    overflow: hidden;
+    display: flex;
+}
+
+.filter-bar-kept {
+    height: 100%;
+    background: var(--secondary);
+    width: 0%;
+    transition: width 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.filter-bar-removed {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow: 0 0 6px rgba(255, 107, 0, 0.4);
+}
+
+.filter-bar-scanline {
+    position: absolute;
+    top: 0;
+    left: -30%;
+    width: 30%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(255, 107, 0, 0.3) 50%,
+        transparent 100%
+    );
+    animation: filterScan 1.2s ease-in-out infinite;
+    pointer-events: none;
+}
+
+.filter-panel.visible .filter-bar-scanline {
+    display: none;
+}
+
+.filter-panel.scanning .filter-bar-scanline {
+    display: block;
+}
+
+@keyframes filterScan {
+    0%   { left: -30%; }
+    100% { left: 100%; }
+}
+
+.filter-row {
+    display: flex;
+    justify-content: space-between;
+    color: var(--primary);
+    margin-top: 4px;
+    line-height: 1.4;
+}
+
+.filter-row-dim {
+    color: var(--primary-dim);
+    font-size: 0.65rem;
+    margin-top: 6px;
+    border-top: 1px solid rgba(45, 55, 72, 0.4);
+    padding-top: 6px;
+}
+
+.filter-val {
+    color: var(--secondary);
+}
+
+.filter-val-accent {
+    color: var(--accent);
+    text-shadow: 0 0 6px rgba(255, 107, 0, 0.3);
+}
+
+/* ─── Removed Lines Box ──────────────────────────────────────────────────── */
+
+.removed-lines-box {
+    position: relative;
+    margin-top: 10px;
+    height: 0;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 107, 0, 0.3);
+    border-radius: 2px;
+    transition: height 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+                margin-top 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.5s ease;
+    opacity: 0;
+}
+
+.removed-lines-box.visible {
+    height: 80px;
+    opacity: 1;
+}
+
+.removed-lines-box canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.removed-lines-label {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    font-size: 0.5rem;
+    color: rgba(255, 107, 0, 0.5);
+    letter-spacing: 1px;
+    pointer-events: none;
 }

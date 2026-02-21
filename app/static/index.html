@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CYBERPLOTTER // SVG & G-CODE TOOLSET</title>
+    <title>PLOTTERTOOL // SVG & G-CODE TOOLSET</title>
     <link rel="stylesheet" href="/static/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
 </head>
@@ -11,7 +11,7 @@
     <div class="scanline"></div>
     <div class="container">
         <header>
-            <h1>SYS.OP // CYBERPLOTTER_V2.0</h1>
+            <h1>SYS.OP // MFCORP PLOTTERTOOL_V2.5</h1>
             <div class="status-bar">
                 <div class="status-indicator" id="status-dot"></div>
                 <span id="status-text">STATUS: IDLE</span>
@@ -24,7 +24,7 @@
         <div id="settings-overlay" class="settings-overlay hidden">
             <div class="settings-panel">
                 <div class="panel-header">
-                    PLOTTER SETTINGS
+                    PLOTTERTOOL SETTINGS
                     <button id="btn-settings-close" class="cyber-btn-icon">&#10005;</button>
                 </div>
                 <div class="settings-body">
@@ -40,6 +40,17 @@
                         </div>
                     </div>
                     <div class="settings-group">
+                        <div class="settings-label">PEN FILTER</div>
+                        <div class="settings-row">
+                            <label>PEN WIDTH (mm)</label>
+                            <input type="number" id="set-pen-width" step="0.1" min="0" class="cyber-input" title="Pen tip diameter in mm. Set to 0 to disable line overlap filtering.">
+                        </div>
+                        <div class="settings-row">
+                            <label>MIN VISIBILITY (%)</label>
+                            <input type="number" id="set-visibility-threshold" step="5" min="0" max="100" class="cyber-input" title="Minimum percentage of a line's drawn area that must be visible (not covered by other lines) to keep it.">
+                        </div>
+                    </div>
+                    <div class="settings-group">
                         <div class="settings-label">SPEED</div>
                         <div class="settings-row">
                             <label>DRAW SPEED (mm/min)</label>
@@ -52,13 +63,6 @@
                         <div class="settings-row">
                             <label>Z SPEED (mm/min)</label>
                             <input type="number" id="set-z-speed" step="50" min="1" class="cyber-input">
-                        </div>
-                    </div>
-                    <div class="settings-group">
-                        <div class="settings-label">OPTIMIZATION</div>
-                        <div class="settings-row">
-                            <label>2-OPT MAX ITERATIONS</label>
-                            <input type="number" id="set-max-iterations" step="50" min="50" max="1000" class="cyber-input">
                         </div>
                     </div>
                     <div class="settings-group">
@@ -89,6 +93,21 @@
         
         <main>
             <div class="panel left-panel">
+                <div class="panel-header">QUICK SETTINGS</div>
+                <div class="quick-settings">
+                    <div class="settings-row">
+                        <label>DRAW SPEED (mm/min)</label>
+                        <input type="number" id="quick-feedrate" step="100" min="1" class="cyber-input">
+                    </div>
+                    <div class="settings-row">
+                        <label>TRAVEL SPEED (mm/min)</label>
+                        <input type="number" id="quick-travel-speed" step="100" min="1" class="cyber-input">
+                    </div>
+                    <div class="settings-row">
+                        <label>PEN WIDTH (mm)</label>
+                        <input type="number" id="quick-pen-width" step="0.1" min="0" class="cyber-input">
+                    </div>
+                </div>
                 <div class="panel-header">TERMINAL OUTPUT</div>
                 <div class="terminal" id="terminal">
                     <div>> SYSTEM READY. AWAITING INPUT...</div>
@@ -96,9 +115,13 @@
                 <div class="controls">
                     <input type="file" id="file-input" accept=".gcode,.nc,.txt,.svg" class="hidden">
                     <button id="btn-upload" class="cyber-btn">SELECT FILE</button>
-                    <button id="btn-convert-svg" class="cyber-btn hidden">CONVERT SVG</button>
+                    <button id="btn-convert-svg" class="cyber-btn hidden">CONVERT AND OPTIMIZE</button>
                     <button id="btn-optimize" class="cyber-btn disabled" disabled>EXECUTE OPTIMIZATION</button>
+                    <button id="btn-compare" class="cyber-btn hidden">HOLD TO COMPARE</button>
                     <button id="btn-download" class="cyber-btn hidden">DOWNLOAD RESULT</button>
+                    <div class="svg-progress-container hidden" id="svg-progress-container">
+                        <div class="svg-progress-bar" id="svg-progress-bar"></div>
+                    </div>
                 </div>
             </div>
             
@@ -116,13 +139,41 @@
                         <div class="stat-row">PATHS: <span id="stat-paths">0 / 0</span></div>
                         <div class="stat-row">PROGRESS: <span id="stat-opt">0%</span></div>
                         <div class="stat-divider"></div>
-                        <div class="stat-row">PRE 2-OPT: <span id="stat-orig-dist">---</span></div>
-                        <div class="stat-row">OPT TRAVEL: <span id="stat-dist">---</span></div>
-                        <div class="stat-row">SAVED: <span id="stat-savings" class="highlight">---</span></div>
+                        <div class="stat-row">ORIGINAL TIME: <span id="stat-orig-time">---</span></div>
+                        <div class="stat-row">CURRENT TIME: <span id="stat-time">---</span></div>
+                        <div class="stat-row">TIME SAVED: <span id="stat-time-saved" class="highlight">---</span></div>
                         <div class="stat-row">2-OPT ITERS: <span id="stat-iter">---</span></div>
                     </div>
                     <div class="graph-container" id="graph-container">
                         <canvas id="graph-canvas"></canvas>
+                    </div>
+                    <div class="filter-panel" id="filter-panel">
+                        <div class="filter-panel-header">COVERAGE ANALYSIS // LINE FILTER</div>
+                        <div class="filter-bar-track">
+                            <div class="filter-bar-kept" id="filter-bar-kept"></div>
+                            <div class="filter-bar-removed" id="filter-bar-removed"></div>
+                            <div class="filter-bar-scanline" id="filter-bar-scanline"></div>
+                        </div>
+                        <div class="filter-row">
+                            <span>REMOVED</span>
+                            <span class="filter-val-accent" id="filter-removed">0</span>
+                        </div>
+                        <div class="filter-row">
+                            <span>RETAINED</span>
+                            <span class="filter-val" id="filter-kept">0</span>
+                        </div>
+                        <div class="filter-row">
+                            <span>TIME SAVED</span>
+                            <span class="filter-val-accent" id="filter-time-saved">0s</span>
+                        </div>
+                        <div class="filter-row filter-row-dim">
+                            <span>PEN <span id="filter-pen">0</span>mm</span>
+                            <span>VIS &ge;<span id="filter-vis">0</span>%</span>
+                        </div>
+                        <div class="removed-lines-box" id="removed-lines-box">
+                            <canvas id="removed-lines-canvas"></canvas>
+                            <div class="removed-lines-label">FILTERED</div>
+                        </div>
                     </div>
                 </div>
             </div>

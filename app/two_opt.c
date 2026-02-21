@@ -6,6 +6,14 @@
  */
 
 #include <math.h>
+#include <time.h>
+#include <sys/time.h>
+
+static inline double get_time_sec() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
 
 static inline double pdist(double x1, double y1, double x2, double y2) {
     double dx = x1 - x2, dy = y1 - y2;
@@ -38,7 +46,7 @@ static double total_penup(const double *sx, const double *sy,
  *   ex, ey     — end point coordinates (modified in place)
  *   order      — original indices, initially [0..n-1] (modified in place)
  *   flipped    — flip flags, initially all 0 (modified in place)
- *   max_iter   — maximum number of 2-opt passes
+ *   max_iter   — maximum number of 2-opt passes (used as array size for hist)
  *   hist       — output distance history, must hold (max_iter + 1) doubles
  *
  * Returns: number of iterations actually performed.
@@ -53,8 +61,19 @@ int two_opt(int n,
     if (n <= 1) return 0;
 
     int iter = 0, improved = 1;
+    double start_time = get_time_sec();
+    double last_improvement_time = start_time;
+    double best_dist = hist[0];
 
     while (improved && iter < max_iter) {
+        double current_time = get_time_sec();
+        if (current_time - start_time > 60.0) {
+            break; // Stop after 1 minute
+        }
+        if (current_time - last_improvement_time > 10.0) {
+            break; // Stop if no considerable progress for 10 seconds
+        }
+
         improved = 0;
         iter++;
 
@@ -102,6 +121,12 @@ int two_opt(int n,
         }
 
         hist[iter] = total_penup(sx, sy, ex, ey, n);
+        
+        // Check if the improvement is considerable (e.g., > 0.1%)
+        if (best_dist - hist[iter] > best_dist * 0.001) {
+            best_dist = hist[iter];
+            last_improvement_time = get_time_sec();
+        }
     }
 
     return iter;

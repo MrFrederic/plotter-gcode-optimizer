@@ -59,7 +59,6 @@ class GcodeOptimizer:
         self.feedrate = 1000
         self.travel_speed = 3000
         self.z_speed = 500
-        self.max_iterations = 500
         self.gcode_header = "G28"
         self.gcode_footer = "G0 Z5\nG0 X10 Y10\nM84"
         self.preamble = []
@@ -133,6 +132,119 @@ class GcodeOptimizer:
             dist_total += dist(paths[i].end, paths[i+1].start)
         return dist_total
 
+    def greedy_sort(self, paths):
+        """
+        Phase 1: Greedy Nearest Neighbor sort.
+        Returns (sorted_paths, greedy_progress_history) where history contains
+        each step of the greedy algorithm for animation.
+        """
+        if not paths:
+            return [], []
+        
+        unvisited = paths.copy()
+        optimized = []
+        current_pos = (0.0, 0.0)
+        progress_history = []  # [(path_index, was_reversed, cumulative_travel)]
+        cumulative_travel = 0.0
+        
+        # Pre-calculate lengths for heuristic
+        for p in unvisited:
+            p.length = sum(dist(p.points[i], p.points[i+1]) for i in range(len(p.points)-1))
+        
+        original_paths = paths.copy()
+        
+        while unvisited:
+            best_path = None
+            best_score = float('inf')
+            reverse_best = False
+            best_travel = 0.0
+            
+            for p in unvisited:
+                d_start = dist(current_pos, p.start)
+                d_end = dist(current_pos, p.end)
+                
+                score_start = d_start + (p.length * 0.1)
+                score_end = d_end + (p.length * 0.1)
+                
+                if score_start < best_score:
+                    best_score = score_start
+                    best_path = p
+                    reverse_best = False
+                    best_travel = d_start
+                if score_end < best_score:
+                    best_score = score_end
+                    best_path = p
+                    reverse_best = True
+                    best_travel = d_end
+            
+            if reverse_best:
+                best_path.reverse()
+            
+            # Record original index for animation
+            orig_idx = original_paths.index(best_path) if best_path in original_paths else -1
+            cumulative_travel += best_travel
+            progress_history.append({
+                'original_index': orig_idx,
+                'reversed': reverse_best,
+                'travel': best_travel,
+                'cumulative_travel': cumulative_travel
+            })
+            
+            optimized.append(best_path)
+            current_pos = best_path.end
+            unvisited.remove(best_path)
+        
+        return optimized, progress_history
+
+    def two_opt_sync(self, paths):
+        """
+        Phase 2: 2-Opt refinement (synchronous, runs in C).
+        Returns (optimized_paths, stats_dict).
+        """
+        if not paths:
+            return [], {
+                'iterations': 0,
+                'dist_history': [0],
+                'final_dist': 0
+            }
+        
+        n = len(paths)
+        max_iterations = 100000
+        
+        lib = _get_two_opt_lib()
+        
+        c_double_n = ctypes.c_double * n
+        c_int_n = ctypes.c_int * n
+        c_double_hist = ctypes.c_double * (max_iterations + 1)
+        
+        sx = c_double_n(*[p.start[0] for p in paths])
+        sy = c_double_n(*[p.start[1] for p in paths])
+        ex = c_double_n(*[p.end[0] for p in paths])
+        ey = c_double_n(*[p.end[1] for p in paths])
+        order = c_int_n(*range(n))
+        flipped = c_int_n(*([0] * n))
+        hist = c_double_hist()
+        
+        iterations = lib.two_opt(n, sx, sy, ex, ey, order, flipped, max_iterations, hist)
+        
+        # Reconstruct the optimized path list from C results
+        original_paths = paths[:]
+        optimized = []
+        for i in range(n):
+            p = Path(list(original_paths[order[i]].points))
+            if flipped[i]:
+                p.reverse()
+            optimized.append(p)
+        
+        dist_history = [hist[i] for i in range(iterations + 1)]
+        final_dist = dist_history[-1] if dist_history else 0
+        
+        return optimized, {
+            'iterations': iterations,
+            'dist_history': dist_history,
+            'final_dist': final_dist
+        }
+
     async def optimize(self, paths, merge_threshold=0.05, progress_callback=None):
         if not paths:
             return {
@@ -200,7 +312,8 @@ class GcodeOptimizer:
             await progress_callback(phase=2, current=0, total=0)
 
         n = len(optimized)
-        max_iterations = self.max_iterations
+        # We use a large number for max_iterations since we now rely on time limits
+        max_iterations = 100000
 
         lib = _get_two_opt_lib()
 
@@ -246,7 +359,7 @@ class GcodeOptimizer:
 
     def generate(self, paths):
         out = []
-        out.append("; Optimized by CyberPlotter")
+        out.append("; Optimized by MFCORP© PlotterTool")
         out.append("G90 ; Absolute positioning")
         out.append("G21 ; Millimeters")
         if self.gcode_header:
