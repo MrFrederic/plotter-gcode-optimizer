@@ -1,3 +1,47 @@
+// ─── Settings ────────────────────────────────────────────────────────────────
+
+const SETTINGS_KEY = 'cyberplotter_settings';
+
+const DEFAULT_SETTINGS = {
+    z_up: 2.0,
+    z_down: 0.0,
+    feedrate: 1000,
+    travel_speed: 3000,
+    cutting_speed: 1000,
+};
+
+function loadSettings() {
+    try {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    } catch (_) {}
+    return { ...DEFAULT_SETTINGS };
+}
+
+function saveSettings(s) {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+}
+
+function applySettingsToForm(s) {
+    document.getElementById('set-z-up').value = s.z_up;
+    document.getElementById('set-z-down').value = s.z_down;
+    document.getElementById('set-feedrate').value = s.feedrate;
+    document.getElementById('set-travel-speed').value = s.travel_speed;
+    document.getElementById('set-cutting-speed').value = s.cutting_speed;
+}
+
+function readSettingsFromForm() {
+    return {
+        z_up: parseFloat(document.getElementById('set-z-up').value),
+        z_down: parseFloat(document.getElementById('set-z-down').value),
+        feedrate: parseFloat(document.getElementById('set-feedrate').value),
+        travel_speed: parseFloat(document.getElementById('set-travel-speed').value),
+        cutting_speed: parseFloat(document.getElementById('set-cutting-speed').value),
+    };
+}
+
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+
 const fileInput = document.getElementById('file-input');
 const btnUpload = document.getElementById('btn-upload');
 const btnOptimize = document.getElementById('btn-optimize');
@@ -18,6 +62,12 @@ const graphContainer = document.getElementById('graph-container');
 const graphCanvas = document.getElementById('graph-canvas');
 const graphCtx = graphCanvas.getContext('2d');
 
+const btnSettingsOpen = document.getElementById('btn-settings');
+const btnSettingsClose = document.getElementById('btn-settings-close');
+const btnSettingsSave = document.getElementById('btn-settings-save');
+const btnSettingsReset = document.getElementById('btn-settings-reset');
+const settingsOverlay = document.getElementById('settings-overlay');
+
 let currentJobId = null;
 let originalPaths = [];
 let optimizedPaths = [];
@@ -27,6 +77,34 @@ let currentPhase = 0;
 let graphAnimating = false;
 let animationToken = 0;
 let pendingComplete = null;
+
+// ─── Settings panel ───────────────────────────────────────────────────────────
+
+applySettingsToForm(loadSettings());
+
+btnSettingsOpen.addEventListener('click', () => {
+    applySettingsToForm(loadSettings());
+    settingsOverlay.classList.remove('hidden');
+});
+
+btnSettingsClose.addEventListener('click', () => settingsOverlay.classList.add('hidden'));
+
+settingsOverlay.addEventListener('click', (e) => {
+    if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden');
+});
+
+btnSettingsSave.addEventListener('click', () => {
+    const s = readSettingsFromForm();
+    saveSettings(s);
+    log('SETTINGS SAVED TO LOCAL STORAGE.', 'accent');
+    settingsOverlay.classList.add('hidden');
+});
+
+btnSettingsReset.addEventListener('click', () => {
+    applySettingsToForm(DEFAULT_SETTINGS);
+});
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
 function setStatus(text, active = false) {
     statusText.textContent = `STATUS: ${text}`;
@@ -66,11 +144,16 @@ window.addEventListener('resize', resizeCanvas);
 
 btnUpload.addEventListener('click', () => fileInput.click());
 
+// ─── File selection ───────────────────────────────────────────────────────────
+
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     
+    const isSvg = file.name.toLowerCase().endsWith('.svg');
+
     log(`FILE SELECTED: ${file.name}`, 'highlight');
+    if (isSvg) log('SVG DETECTED. WILL CONVERT TO G-CODE VIA svg2gcode.', 'accent');
     btnOptimize.classList.remove('disabled');
     btnOptimize.disabled = false;
     btnDownload.classList.add('hidden');
@@ -87,22 +170,33 @@ fileInput.addEventListener('change', async (e) => {
     graphContainer.classList.remove('visible');
     
     setStatus('PARSING FILE', true);
-    log('UPLOADING AND PARSING G-CODE...', 'normal');
+    log('UPLOADING AND PARSING...', 'normal');
     
+    const settings = loadSettings();
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('settings', JSON.stringify(settings));
+
+    const endpoint = isSvg ? '/upload-svg' : '/upload';
 
     try {
-        const response = await fetch('/upload', {
+        const response = await fetch(endpoint, {
             method: 'POST',
             body: formData
         });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || response.statusText);
+        }
+
         const data = await response.json();
         currentJobId = data.job_id;
         originalPaths = data.paths;
         
         log(`JOB ID ASSIGNED: ${currentJobId}`, 'accent');
-        log(`EXTRACTED ${originalPaths.length} PATHS. READY FOR OPTIMIZATION.`, 'highlight');
+        if (isSvg) log(`SVG CONVERTED: ${originalPaths.length} PATHS EXTRACTED.`, 'highlight');
+        else log(`EXTRACTED ${originalPaths.length} PATHS. READY FOR OPTIMIZATION.`, 'highlight');
         
         statPaths.textContent = `0 / ${originalPaths.length}`;
         statOpt.textContent = '0%';
@@ -182,18 +276,14 @@ function connectWebSocket(jobId) {
             statPhase.textContent = 'PHASE 2: 2-OPT';
             statOpt.textContent = '100%';
             
-            // Update stats
             statOrigDist.textContent = data.original_dist.toFixed(1) + ' mm';
             
-            // Update paths to final ordering
             if (data.paths && data.paths.length > 0) {
                 optimizedPaths = data.paths;
             }
             draw();
             
-            // Show graph and start animation
             graphContainer.classList.add('visible');
-            // Use rAF to ensure container has layout before sizing the canvas
             requestAnimationFrame(() => {
                 resizeGraphCanvas();
                 startGraphAnimation(data.dist_history, data.iterations, data.final_dist, data.original_dist);

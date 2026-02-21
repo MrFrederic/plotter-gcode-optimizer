@@ -330,3 +330,119 @@ canvas {
     height: 100%;
     display: block;
 }
+
+/* ─── Settings button in header ─────────────────────────────────────────── */
+
+.cyber-btn-icon {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--primary);
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    font-family: 'Share Tech Mono', monospace;
+    transition: all 0.2s;
+}
+
+.cyber-btn-icon:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ─── Settings overlay / modal ──────────────────────────────────────────── */
+
+.settings-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.settings-panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-top: 2px solid var(--accent);
+    min-width: 380px;
+    max-width: 480px;
+    width: 100%;
+    position: relative;
+}
+
+.settings-panel .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+    letter-spacing: 2px;
+    color: var(--secondary);
+}
+
+.settings-panel .panel-header::before {
+    content: '///';
+    color: var(--accent-dim);
+    margin-right: 10px;
+}
+
+.settings-body {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.settings-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.settings-label {
+    font-size: 0.7rem;
+    letter-spacing: 3px;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 5px;
+}
+
+.settings-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    font-size: 0.8rem;
+    color: var(--primary);
+}
+
+.cyber-input {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border);
+    color: var(--secondary);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.85rem;
+    padding: 6px 10px;
+    width: 120px;
+    text-align: right;
+    transition: border-color 0.2s;
+}
+
+.cyber-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.settings-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 5px;
+}
+
+.settings-actions .cyber-btn {
+    flex: 1;
+    padding: 10px;
+    font-size: 0.8rem;
+}

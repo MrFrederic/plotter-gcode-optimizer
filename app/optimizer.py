@@ -57,6 +57,7 @@ class GcodeOptimizer:
         self.z_up = 2.0
         self.z_down = 0.0
         self.feedrate = 1000
+        self.travel_speed = 3000
         self.preamble = []
         self.postamble = []
 
@@ -248,10 +249,10 @@ class GcodeOptimizer:
         
         for p in paths:
             start = p.start
-            out.append(f"G0 X{start[0]:.3f} Y{start[1]:.3f}")
+            out.append(f"G0 X{start[0]:.3f} Y{start[1]:.3f} F{self.travel_speed:.0f}")
             out.append(f"G0 Z{self.z_down:.2f}")
             for pt in p.points[1:]:
-                out.append(f"G1 X{pt[0]:.3f} Y{pt[1]:.3f} F{self.feedrate}")
+                out.append(f"G1 X{pt[0]:.3f} Y{pt[1]:.3f} F{self.feedrate:.0f}")
             out.append(f"G0 Z{self.z_up:.2f}")
             
         out.append("G0 X0 Y0 ; Return to home")
