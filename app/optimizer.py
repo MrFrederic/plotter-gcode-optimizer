@@ -57,6 +57,11 @@ class GcodeOptimizer:
         self.z_up = 2.0
         self.z_down = 0.0
         self.feedrate = 1000
+        self.travel_speed = 3000
+        self.z_speed = 500
+        self.max_iterations = 500
+        self.gcode_header = "G28"
+        self.gcode_footer = "G0 Z5\nG0 X10 Y10\nM84"
         self.preamble = []
         self.postamble = []
 
@@ -195,7 +200,7 @@ class GcodeOptimizer:
             await progress_callback(phase=2, current=0, total=0)
 
         n = len(optimized)
-        max_iterations = 500
+        max_iterations = self.max_iterations
 
         lib = _get_two_opt_lib()
 
@@ -244,15 +249,22 @@ class GcodeOptimizer:
         out.append("; Optimized by CyberPlotter")
         out.append("G90 ; Absolute positioning")
         out.append("G21 ; Millimeters")
-        out.append(f"G0 Z{self.z_up:.2f} ; Pen up")
-        
+        if self.gcode_header:
+            for line in self.gcode_header.splitlines():
+                if line.strip():
+                    out.append(line.strip())
+        out.append(f"G0 Z{self.z_up:.2f} F{self.z_speed:.0f} ; Pen up (controlled Z speed)")
+
         for p in paths:
             start = p.start
-            out.append(f"G0 X{start[0]:.3f} Y{start[1]:.3f}")
-            out.append(f"G0 Z{self.z_down:.2f}")
+            out.append(f"G0 X{start[0]:.3f} Y{start[1]:.3f} F{self.travel_speed:.0f}")
+            out.append(f"G0 Z{self.z_down:.2f} F{self.z_speed:.0f}")
             for pt in p.points[1:]:
-                out.append(f"G1 X{pt[0]:.3f} Y{pt[1]:.3f} F{self.feedrate}")
-            out.append(f"G0 Z{self.z_up:.2f}")
-            
-        out.append("G0 X0 Y0 ; Return to home")
+                out.append(f"G1 X{pt[0]:.3f} Y{pt[1]:.3f} F{self.feedrate:.0f}")
+            out.append(f"G0 Z{self.z_up:.2f} F{self.z_speed:.0f}")
+
+        if self.gcode_footer:
+            for line in self.gcode_footer.splitlines():
+                if line.strip():
+                    out.append(line.strip())
         return "\n".join(out)

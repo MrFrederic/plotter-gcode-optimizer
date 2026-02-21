@@ -1,1 +1,4 @@
 /example.gcode
+__pycache__/
+*.pyc
+*.pyo

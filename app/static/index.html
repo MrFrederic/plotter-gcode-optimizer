@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CYBERPLOTTER // G-CODE OPTIMIZER</title>
+    <title>CYBERPLOTTER // SVG & G-CODE TOOLSET</title>
     <link rel="stylesheet" href="/static/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
 </head>
@@ -11,23 +11,92 @@
     <div class="scanline"></div>
     <div class="container">
         <header>
-            <h1>SYS.OP // CYBERPLOTTER_V1.0</h1>
+            <h1>SYS.OP // CYBERPLOTTER_V2.0</h1>
             <div class="status-bar">
                 <div class="status-indicator" id="status-dot"></div>
                 <span id="status-text">STATUS: IDLE</span>
                 <span class="blinking-cursor">_</span>
+                <button id="btn-settings" class="cyber-btn-icon" title="Settings">&#9881;</button>
             </div>
         </header>
+
+        <!-- Settings Modal -->
+        <div id="settings-overlay" class="settings-overlay hidden">
+            <div class="settings-panel">
+                <div class="panel-header">
+                    PLOTTER SETTINGS
+                    <button id="btn-settings-close" class="cyber-btn-icon">&#10005;</button>
+                </div>
+                <div class="settings-body">
+                    <div class="settings-group">
+                        <div class="settings-label">PEN CONTROL</div>
+                        <div class="settings-row">
+                            <label>Z UP (mm)</label>
+                            <input type="number" id="set-z-up" step="0.1" class="cyber-input">
+                        </div>
+                        <div class="settings-row">
+                            <label>Z DOWN (mm)</label>
+                            <input type="number" id="set-z-down" step="0.1" class="cyber-input">
+                        </div>
+                    </div>
+                    <div class="settings-group">
+                        <div class="settings-label">SPEED</div>
+                        <div class="settings-row">
+                            <label>DRAW SPEED (mm/min)</label>
+                            <input type="number" id="set-feedrate" step="100" min="1" class="cyber-input">
+                        </div>
+                        <div class="settings-row">
+                            <label>TRAVEL SPEED (mm/min)</label>
+                            <input type="number" id="set-travel-speed" step="100" min="1" class="cyber-input">
+                        </div>
+                        <div class="settings-row">
+                            <label>Z SPEED (mm/min)</label>
+                            <input type="number" id="set-z-speed" step="50" min="1" class="cyber-input">
+                        </div>
+                    </div>
+                    <div class="settings-group">
+                        <div class="settings-label">OPTIMIZATION</div>
+                        <div class="settings-row">
+                            <label>2-OPT MAX ITERATIONS</label>
+                            <input type="number" id="set-max-iterations" step="50" min="50" max="1000" class="cyber-input">
+                        </div>
+                    </div>
+                    <div class="settings-group">
+                        <div class="settings-label">SVG</div>
+                        <div class="settings-row">
+                            <label>CURVE TOLERANCE (mm)</label>
+                            <input type="number" id="set-curve-tolerance" step="0.01" min="0.01" max="1.0" class="cyber-input">
+                        </div>
+                    </div>
+                    <div class="settings-group">
+                        <div class="settings-label">G-CODE</div>
+                        <div class="settings-row settings-row-vertical">
+                            <label>HEADER COMMANDS</label>
+                            <textarea id="set-gcode-header" rows="2" class="cyber-textarea"></textarea>
+                        </div>
+                        <div class="settings-row settings-row-vertical">
+                            <label>FOOTER COMMANDS</label>
+                            <textarea id="set-gcode-footer" rows="3" class="cyber-textarea"></textarea>
+                        </div>
+                    </div>
+                    <div class="settings-actions">
+                        <button id="btn-settings-save" class="cyber-btn">SAVE SETTINGS</button>
+                        <button id="btn-settings-reset" class="cyber-btn">RESET DEFAULTS</button>
+                    </div>
+                </div>
+            </div>
+        </div>
         
         <main>
             <div class="panel left-panel">
                 <div class="panel-header">TERMINAL OUTPUT</div>
                 <div class="terminal" id="terminal">
-                    <div>> SYSTEM READY. AWAITING G-CODE INPUT...</div>
+                    <div>> SYSTEM READY. AWAITING INPUT...</div>
                 </div>
                 <div class="controls">
-                    <input type="file" id="file-input" accept=".gcode,.nc,.txt" class="hidden">
+                    <input type="file" id="file-input" accept=".gcode,.nc,.txt,.svg" class="hidden">
                     <button id="btn-upload" class="cyber-btn">SELECT FILE</button>
+                    <button id="btn-convert-svg" class="cyber-btn hidden">CONVERT SVG</button>
                     <button id="btn-optimize" class="cyber-btn disabled" disabled>EXECUTE OPTIMIZATION</button>
                     <button id="btn-download" class="cyber-btn hidden">DOWNLOAD RESULT</button>
                 </div>
@@ -37,6 +106,11 @@
                 <div class="panel-header">TOOLPATH VISUALIZATION</div>
                 <div class="canvas-container">
                     <canvas id="viz-canvas"></canvas>
+                    <!-- SVG preview shown before conversion -->
+                    <div id="svg-preview-pane" class="hidden">
+                        <div class="svg-preview-label">SVG PREVIEW // AWAITING CONVERSION</div>
+                        <img id="svg-preview-img" alt="SVG Preview">
+                    </div>
                     <div class="overlay-stats" id="stats">
                         <div class="stat-row">PHASE: <span id="stat-phase" class="highlight">IDLE</span></div>
                         <div class="stat-row">PATHS: <span id="stat-paths">0 / 0</span></div>

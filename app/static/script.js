@@ -1,5 +1,62 @@
+// ─── Settings ────────────────────────────────────────────────────────────────
+
+const SETTINGS_KEY = 'cyberplotter_settings';
+
+const DEFAULT_SETTINGS = {
+    z_up: 2.0,
+    z_down: 0.0,
+    feedrate: 1000,
+    travel_speed: 3000,
+    z_speed: 500,
+    max_iterations: 500,
+    curve_tolerance: 0.1,
+    gcode_header: 'G28',
+    gcode_footer: 'G0 Z5\nG0 X10 Y10\nM84',
+};
+
+function loadSettings() {
+    try {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    } catch (_) {}
+    return { ...DEFAULT_SETTINGS };
+}
+
+function saveSettings(s) {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+}
+
+function applySettingsToForm(s) {
+    document.getElementById('set-z-up').value = s.z_up;
+    document.getElementById('set-z-down').value = s.z_down;
+    document.getElementById('set-feedrate').value = s.feedrate;
+    document.getElementById('set-travel-speed').value = s.travel_speed;
+    document.getElementById('set-z-speed').value = s.z_speed;
+    document.getElementById('set-max-iterations').value = s.max_iterations;
+    document.getElementById('set-curve-tolerance').value = s.curve_tolerance;
+    document.getElementById('set-gcode-header').value = s.gcode_header;
+    document.getElementById('set-gcode-footer').value = s.gcode_footer;
+}
+
+function readSettingsFromForm() {
+    return {
+        z_up: parseFloat(document.getElementById('set-z-up').value),
+        z_down: parseFloat(document.getElementById('set-z-down').value),
+        feedrate: parseFloat(document.getElementById('set-feedrate').value),
+        travel_speed: parseFloat(document.getElementById('set-travel-speed').value),
+        z_speed: parseFloat(document.getElementById('set-z-speed').value),
+        max_iterations: parseInt(document.getElementById('set-max-iterations').value),
+        curve_tolerance: parseFloat(document.getElementById('set-curve-tolerance').value),
+        gcode_header: document.getElementById('set-gcode-header').value,
+        gcode_footer: document.getElementById('set-gcode-footer').value,
+    };
+}
+
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+
 const fileInput = document.getElementById('file-input');
 const btnUpload = document.getElementById('btn-upload');
+const btnConvertSvg = document.getElementById('btn-convert-svg');
 const btnOptimize = document.getElementById('btn-optimize');
 const btnDownload = document.getElementById('btn-download');
 const terminal = document.getElementById('terminal');
@@ -17,6 +74,14 @@ const statIter = document.getElementById('stat-iter');
 const graphContainer = document.getElementById('graph-container');
 const graphCanvas = document.getElementById('graph-canvas');
 const graphCtx = graphCanvas.getContext('2d');
+const svgPreviewPane = document.getElementById('svg-preview-pane');
+const svgPreviewImg = document.getElementById('svg-preview-img');
+
+const btnSettingsOpen = document.getElementById('btn-settings');
+const btnSettingsClose = document.getElementById('btn-settings-close');
+const btnSettingsSave = document.getElementById('btn-settings-save');
+const btnSettingsReset = document.getElementById('btn-settings-reset');
+const settingsOverlay = document.getElementById('settings-overlay');
 
 let currentJobId = null;
 let originalPaths = [];
@@ -27,6 +92,36 @@ let currentPhase = 0;
 let graphAnimating = false;
 let animationToken = 0;
 let pendingComplete = null;
+let pendingSvgFile = null;  // SVG file waiting for conversion
+let svgObjectUrl = null;    // Revocable object URL for SVG preview
+
+// ─── Settings panel ───────────────────────────────────────────────────────────
+
+applySettingsToForm(loadSettings());
+
+btnSettingsOpen.addEventListener('click', () => {
+    applySettingsToForm(loadSettings());
+    settingsOverlay.classList.remove('hidden');
+});
+
+btnSettingsClose.addEventListener('click', () => settingsOverlay.classList.add('hidden'));
+
+settingsOverlay.addEventListener('click', (e) => {
+    if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden');
+});
+
+btnSettingsSave.addEventListener('click', () => {
+    const s = readSettingsFromForm();
+    saveSettings(s);
+    log('SETTINGS SAVED TO LOCAL STORAGE.', 'accent');
+    settingsOverlay.classList.add('hidden');
+});
+
+btnSettingsReset.addEventListener('click', () => {
+    applySettingsToForm(DEFAULT_SETTINGS);
+});
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
 function setStatus(text, active = false) {
     statusText.textContent = `STATUS: ${text}`;
@@ -66,58 +161,190 @@ window.addEventListener('resize', resizeCanvas);
 
 btnUpload.addEventListener('click', () => fileInput.click());
 
+function resetStats(totalPaths) {
+    statPaths.textContent = `0 / ${totalPaths}`;
+    statOpt.textContent = '0%';
+    statPhase.textContent = 'IDLE';
+    statOrigDist.textContent = '---';
+    statDist.textContent = '---';
+    statSavings.textContent = '---';
+    statIter.textContent = '---';
+}
+
+// ─── File selection ───────────────────────────────────────────────────────────
+
+// Fake tech log messages shown during SVG conversion
+const SVG_CONVERSION_MESSAGES = [
+    'INITIALIZING SVG PARSER...',
+    'LOADING BEZIER DECOMPOSITION MODULE...',
+    'SCANNING SVG STRUCTURE FOR PATH PRIMITIVES...',
+    'PARSING PATH DATA [d="M..."]...',
+    'APPLYING VIEWPORT COORDINATE TRANSFORMS...',
+    'RESOLVING INHERITED STYLE ATTRIBUTES...',
+    'FLATTENING TRANSFORM MATRIX STACK...',
+    'TESSELLATING CUBIC BEZIER CURVES...',
+    'INTERPOLATING ARC SEGMENTS...',
+    'APPLYING CURVE TOLERANCE FILTER...',
+    'COMPUTING LINE SEGMENT CHAINS...',
+    'GENERATING INTERMEDIATE G-CODE...',
+    'POST-PROCESSING: M3->Z_DOWN, M5->Z_UP...',
+    'FINALIZING PLOTTER COMMAND SEQUENCE...',
+];
+
+function showSvgPreview(file) {
+    if (svgObjectUrl) URL.revokeObjectURL(svgObjectUrl);
+    svgObjectUrl = URL.createObjectURL(file);
+    svgPreviewImg.src = svgObjectUrl;
+    canvas.classList.add('hidden');
+    svgPreviewPane.classList.remove('hidden');
+}
+
+function hideSvgPreview() {
+    svgPreviewPane.classList.add('hidden');
+    canvas.classList.remove('hidden');
+    if (svgObjectUrl) {
+        URL.revokeObjectURL(svgObjectUrl);
+        svgObjectUrl = null;
+    }
+}
+
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    
-    log(`FILE SELECTED: ${file.name}`, 'highlight');
-    btnOptimize.classList.remove('disabled');
-    btnOptimize.disabled = false;
-    btnDownload.classList.add('hidden');
-    
+
+    const isSvg = file.name.toLowerCase().endsWith('.svg');
+
     // Reset state
     animationToken++;
+    currentJobId = null;
     originalPaths = [];
     optimizedPaths = [];
     distHistory = [];
     currentPhase = 0;
     graphAnimating = false;
     pendingComplete = null;
+    pendingSvgFile = null;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     graphContainer.classList.remove('visible');
-    
-    setStatus('PARSING FILE', true);
-    log('UPLOADING AND PARSING G-CODE...', 'normal');
-    
+    btnDownload.classList.add('hidden');
+    btnOptimize.classList.add('disabled');
+    btnOptimize.disabled = true;
+    btnConvertSvg.classList.add('hidden');
+    hideSvgPreview();
+
+    log(`FILE SELECTED: ${file.name}`, 'highlight');
+
+    if (isSvg) {
+        // Show SVG preview — conversion is triggered manually
+        pendingSvgFile = file;
+        showSvgPreview(file);
+        log('SVG DETECTED. PREVIEW RENDERED.', 'accent');
+        log('PRESS [CONVERT SVG] TO BEGIN G-CODE CONVERSION.', 'normal');
+        btnConvertSvg.classList.remove('hidden');
+        setStatus('AWAITING CONVERSION', false);
+    } else {
+        // GCode file: parse immediately
+        setStatus('PARSING FILE', true);
+        log('UPLOADING AND PARSING G-CODE...', 'normal');
+
+        const settings = loadSettings();
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('settings', JSON.stringify(settings));
+
+        try {
+            const response = await fetch('/upload', { method: 'POST', body: formData });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || response.statusText);
+            }
+            const data = await response.json();
+            currentJobId = data.job_id;
+            originalPaths = data.paths;
+
+            log(`JOB ID ASSIGNED: ${currentJobId}`, 'accent');
+            log(`EXTRACTED ${originalPaths.length} PATHS. READY FOR OPTIMIZATION.`, 'highlight');
+            resetStats(originalPaths.length);
+            calculateBounds(originalPaths);
+            resizeCanvas();
+            btnOptimize.classList.remove('disabled');
+            btnOptimize.disabled = false;
+            fileInput.value = '';
+            setStatus('READY', false);
+        } catch (err) {
+            log(`ERROR: ${err.message}`, 'accent');
+            setStatus('ERROR', false);
+        }
+    }
+});
+
+// ─── SVG Conversion ───────────────────────────────────────────────────────────
+
+btnConvertSvg.addEventListener('click', async () => {
+    if (!pendingSvgFile) return;
+
+    btnConvertSvg.classList.add('disabled');
+    btnConvertSvg.disabled = true;
+    btnUpload.classList.add('disabled');
+    btnUpload.disabled = true;
+    setStatus('CONVERTING SVG', true);
+
+    const settings = loadSettings();
+    log(`TOLERANCE: ${settings.curve_tolerance}mm // SPEED: ${settings.feedrate}mm/min`, 'accent');
+
+    // Simulated tech-log progress — purely cosmetic UX, not tied to real progress
+    let msgIdx = 0;
+    let conversionDone = false;
+    const progressInterval = setInterval(() => {
+        if (!conversionDone && msgIdx < SVG_CONVERSION_MESSAGES.length) {
+            log(SVG_CONVERSION_MESSAGES[msgIdx++]);
+        } else {
+            clearInterval(progressInterval);
+        }
+    }, 280);
+
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', pendingSvgFile);
+    formData.append('settings', JSON.stringify(settings));
 
     try {
-        const response = await fetch('/upload', {
-            method: 'POST',
-            body: formData
-        });
+        const response = await fetch('/upload-svg', { method: 'POST', body: formData });
+        conversionDone = true;
+        clearInterval(progressInterval);
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || response.statusText);
+        }
         const data = await response.json();
         currentJobId = data.job_id;
         originalPaths = data.paths;
-        
+
         log(`JOB ID ASSIGNED: ${currentJobId}`, 'accent');
-        log(`EXTRACTED ${originalPaths.length} PATHS. READY FOR OPTIMIZATION.`, 'highlight');
-        
-        statPaths.textContent = `0 / ${originalPaths.length}`;
-        statOpt.textContent = '0%';
-        statPhase.textContent = 'IDLE';
-        statOrigDist.textContent = '---';
-        statDist.textContent = '---';
-        statSavings.textContent = '---';
-        statIter.textContent = '---';
-        
+        log(`SVG CONVERTED: ${originalPaths.length} PATHS EXTRACTED.`, 'highlight');
+
+        hideSvgPreview();
+        resetStats(originalPaths.length);
         calculateBounds(originalPaths);
         resizeCanvas();
+
+        btnConvertSvg.classList.add('hidden');
+        btnConvertSvg.classList.remove('disabled');
+        btnConvertSvg.disabled = false;
+        btnOptimize.classList.remove('disabled');
+        btnOptimize.disabled = false;
+        btnUpload.classList.remove('disabled');
+        btnUpload.disabled = false;
+        fileInput.value = '';
         setStatus('READY', false);
-        
     } catch (err) {
-        log(`ERROR: ${err.message}`, 'accent');
+        conversionDone = true;
+        clearInterval(progressInterval);
+        log(`CONVERSION ERROR: ${err.message}`, 'accent');
+        btnConvertSvg.classList.remove('disabled');
+        btnConvertSvg.disabled = false;
+        btnUpload.classList.remove('disabled');
+        btnUpload.disabled = false;
         setStatus('ERROR', false);
     }
 });
@@ -147,6 +374,9 @@ function finalizeUI() {
     btnDownload.classList.remove('hidden');
     btnUpload.classList.remove('disabled');
     btnUpload.disabled = false;
+    btnConvertSvg.classList.remove('disabled');
+    btnConvertSvg.disabled = false;
+    fileInput.value = '';
 }
 
 function connectWebSocket(jobId) {
@@ -182,18 +412,14 @@ function connectWebSocket(jobId) {
             statPhase.textContent = 'PHASE 2: 2-OPT';
             statOpt.textContent = '100%';
             
-            // Update stats
             statOrigDist.textContent = data.original_dist.toFixed(1) + ' mm';
             
-            // Update paths to final ordering
             if (data.paths && data.paths.length > 0) {
                 optimizedPaths = data.paths;
             }
             draw();
             
-            // Show graph and start animation
             graphContainer.classList.add('visible');
-            // Use rAF to ensure container has layout before sizing the canvas
             requestAnimationFrame(() => {
                 resizeGraphCanvas();
                 startGraphAnimation(data.dist_history, data.iterations, data.final_dist, data.original_dist);
