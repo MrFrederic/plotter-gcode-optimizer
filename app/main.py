@@ -55,25 +55,58 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
         "msg": f"Loaded {len(paths)} paths. Z-Down: {opt.z_down}, Z-Up: {opt.z_up}"
     })
     
-    await websocket.send_json({"type": "log", "msg": "Starting Neural Optimization Routing..."})
+    await websocket.send_json({"type": "log", "msg": "Deploying Greedy Nearest-Neighbor heuristic..."})
     
-    async def progress(current, total, latest_path, merged_count=0):
-        if latest_path:
-            pts = [{"x": p[0], "y": p[1]} for p in latest_path.points]
-            await websocket.send_json({
-                "type": "progress",
-                "current": current,
-                "total": total,
-                "latest_path": pts
-            })
-            await asyncio.sleep(0.01) # Artificial delay for cool visualization
-        if merged_count > 0:
-            await websocket.send_json({
-                "type": "log",
-                "msg": f"Optimization complete. Merged {merged_count} paths."
-            })
+    async def progress(phase, current, total, latest_path=None):
+        if phase == 1:
+            if latest_path:
+                pts = [{"x": p[0], "y": p[1]} for p in latest_path.points]
+                await websocket.send_json({
+                    "type": "progress",
+                    "phase": 1,
+                    "current": current,
+                    "total": total,
+                    "latest_path": pts
+                })
+                await asyncio.sleep(0.01)
+        elif phase == 2:
+            await websocket.send_json({"type": "log", "msg": "Phase 1 complete. Initializing 2-Opt refinement subsystem..."})
+            await asyncio.sleep(0.3)
+            await websocket.send_json({"type": "log", "msg": "Loading native path-inversion kernels..."})
+            await asyncio.sleep(0.2)
+            await websocket.send_json({"type": "log", "msg": "Executing bidirectional route optimization..."})
+        elif phase == 3:
+            pass  # handled below
 
-    optimized_paths = await opt.optimize(paths, progress_callback=progress)
+    result = await opt.optimize(paths, progress_callback=progress)
+    optimized_paths = result['paths']
+    stats = result['stats']
+    
+    # Send Phase 2 results
+    savings_pct = 0
+    if stats['original_penup_dist'] > 0:
+        savings_pct = (1 - stats['final_penup_dist'] / stats['original_penup_dist']) * 100
+    
+    await websocket.send_json({"type": "log", "msg": f"2-Opt converged: {stats['phase2_iterations']} iterations"})
+    await websocket.send_json({
+        "type": "log",
+        "msg": f"Travel: {stats['original_penup_dist']:.1f}mm -> {stats['final_penup_dist']:.1f}mm ({savings_pct:.1f}% reduction)"
+    })
+    
+    paths_data = [[{"x": p[0], "y": p[1]} for p in path.points] for path in optimized_paths]
+    
+    # Prepend original distance to history for a dramatic full-journey graph
+    full_history = [stats['original_penup_dist']] + stats['phase2_dist_history']
+    
+    await websocket.send_json({
+        "type": "phase2_result",
+        "iterations": stats['phase2_iterations'],
+        "dist_history": full_history,
+        "paths": paths_data,
+        "original_dist": stats['original_penup_dist'],
+        "phase1_dist": stats['phase1_penup_dist'],
+        "final_dist": stats['final_penup_dist'],
+    })
     
     await websocket.send_json({"type": "log", "msg": "Generating optimized G-code..."})
     final_gcode = opt.generate(optimized_paths)

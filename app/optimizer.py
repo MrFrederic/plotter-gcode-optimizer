@@ -1,8 +1,46 @@
 import math
 import re
+import ctypes
+import os
+import subprocess
 
 def dist(p1, p2):
     return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+
+# --- Native 2-opt library (compiled from C) ---
+_two_opt_lib = None
+
+def _get_two_opt_lib():
+    global _two_opt_lib
+    if _two_opt_lib is not None:
+        return _two_opt_lib
+
+    base = os.path.dirname(os.path.abspath(__file__))
+    c_file = os.path.join(base, 'two_opt.c')
+    so_file = os.path.join(base, 'two_opt.so')
+
+    need_compile = (
+        not os.path.exists(so_file)
+        or os.path.getmtime(c_file) > os.path.getmtime(so_file)
+    )
+    if need_compile:
+        subprocess.run(
+            ['gcc', '-O3', '-shared', '-fPIC', '-o', so_file, c_file, '-lm'],
+            check=True
+        )
+
+    lib = ctypes.CDLL(so_file)
+    lib.two_opt.restype = ctypes.c_int
+    lib.two_opt.argtypes = [
+        ctypes.c_int,
+        ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+        ctypes.c_int,
+        ctypes.POINTER(ctypes.c_double),
+    ]
+    _two_opt_lib = lib
+    return lib
 
 class Path:
     def __init__(self, points):
@@ -83,21 +121,42 @@ class GcodeOptimizer:
             
         return paths
 
+    def calculate_penup_distance(self, paths):
+        if not paths: return 0.0
+        dist_total = dist((0.0, 0.0), paths[0].start)
+        for i in range(len(paths) - 1):
+            dist_total += dist(paths[i].end, paths[i+1].start)
+        return dist_total
+
     async def optimize(self, paths, merge_threshold=0.05, progress_callback=None):
-        if not paths: return []
+        if not paths:
+            return {
+                'paths': [],
+                'stats': {
+                    'original_penup_dist': 0,
+                    'phase1_penup_dist': 0,
+                    'final_penup_dist': 0,
+                    'phase2_iterations': 0,
+                    'phase2_dist_history': [0],
+                }
+            }
+        
+        # Calculate original (unoptimized) pen-up distance
+        original_dist = self.calculate_penup_distance(paths)
         
         unvisited = paths.copy()
         optimized = []
         current_pos = (0.0, 0.0)
         total = len(paths)
         
-        # Pre-calculate bounding boxes and centers for clustering
+        # Pre-calculate lengths for heuristic
         for p in unvisited:
-            xs = [pt[0] for pt in p.points]
-            ys = [pt[1] for pt in p.points]
-            p.center = (sum(xs)/len(xs), sum(ys)/len(ys))
             p.length = sum(dist(p.points[i], p.points[i+1]) for i in range(len(p.points)-1))
         
+        # Phase 1: Greedy Nearest Neighbor
+        if progress_callback:
+            await progress_callback(phase=1, current=0, total=total)
+            
         while unvisited:
             best_path = None
             best_score = float('inf')
@@ -107,11 +166,6 @@ class GcodeOptimizer:
                 d_start = dist(current_pos, p.start)
                 d_end = dist(current_pos, p.end)
                 
-                # Score is based on distance to start/end, but we penalize leaving dense areas
-                # We estimate density by checking distance to the center of the path
-                # A path that is close to our current position AND close to other paths is better
-                
-                # Simple heuristic: distance + a small penalty for long paths to prefer clearing out small details first
                 score_start = d_start + (p.length * 0.1)
                 score_end = d_end + (p.length * 0.1)
                 
@@ -132,25 +186,58 @@ class GcodeOptimizer:
             unvisited.remove(best_path)
             
             if progress_callback and len(optimized) % max(1, total // 100) == 0:
-                await progress_callback(len(optimized), total, best_path)
-                
-        # Merge step
-        merged = []
-        if optimized:
-            current_merged = Path(list(optimized[0].points))
-            for i in range(1, len(optimized)):
-                next_path = optimized[i]
-                if dist(current_merged.end, next_path.start) <= merge_threshold:
-                    current_merged.points.extend(next_path.points[1:])
-                else:
-                    merged.append(current_merged)
-                    current_merged = Path(list(next_path.points))
-            merged.append(current_merged)
-            
+                await progress_callback(phase=1, current=len(optimized), total=total, latest_path=best_path)
+        
+        phase1_dist = self.calculate_penup_distance(optimized)
+
+        # Phase 2: 2-Opt Refinement (native C)
         if progress_callback:
-            await progress_callback(total, total, None, merged_count=total - len(merged))
+            await progress_callback(phase=2, current=0, total=0)
+
+        n = len(optimized)
+        max_iterations = 500
+
+        lib = _get_two_opt_lib()
+
+        c_double_n = ctypes.c_double * n
+        c_int_n = ctypes.c_int * n
+        c_double_hist = ctypes.c_double * (max_iterations + 1)
+
+        sx = c_double_n(*[p.start[0] for p in optimized])
+        sy = c_double_n(*[p.start[1] for p in optimized])
+        ex = c_double_n(*[p.end[0] for p in optimized])
+        ey = c_double_n(*[p.end[1] for p in optimized])
+        order = c_int_n(*range(n))
+        flipped = c_int_n(*([0] * n))
+        hist = c_double_hist()
+
+        iterations = lib.two_opt(n, sx, sy, ex, ey, order, flipped, max_iterations, hist)
+
+        # Reconstruct the optimized path list from C results
+        original_paths = optimized[:]
+        optimized = []
+        for i in range(n):
+            p = Path(list(original_paths[order[i]].points))
+            if flipped[i]:
+                p.reverse()
+            optimized.append(p)
+
+        dist_history = [hist[i] for i in range(iterations + 1)]
+        final_dist = dist_history[-1]
+
+        if progress_callback:
+            await progress_callback(phase=3, current=total, total=total)
             
-        return merged
+        return {
+            'paths': optimized,
+            'stats': {
+                'original_penup_dist': original_dist,
+                'phase1_penup_dist': phase1_dist,
+                'final_penup_dist': final_dist,
+                'phase2_iterations': iterations,
+                'phase2_dist_history': dist_history,
+            }
+        }
 
     def generate(self, paths):
         out = []

@@ -282,8 +282,51 @@ canvas {
     padding: 10px;
     border: 1px solid var(--border);
     border-right: 2px solid var(--accent);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 15px;
+}
+
+.stat-divider {
+    border-top: 1px solid var(--border);
+    margin: 3px 0;
 }
 
 .overlay-stats span {
     color: var(--secondary);
+}
+
+.overlay-stats span.highlight {
+    color: var(--accent);
+    font-weight: bold;
+}
+
+.graph-container {
+    position: absolute;
+    bottom: 15px;
+    right: 15px;
+    width: 300px;
+    height: 120px;
+    background: rgba(18, 20, 24, 0.85);
+    border: 1px solid var(--border);
+    border-bottom: 2px solid var(--accent);
+    pointer-events: none;
+    display: none;
+    padding: 4px;
+}
+
+.graph-container.visible {
+    display: block;
+}
+
+#graph-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
 }

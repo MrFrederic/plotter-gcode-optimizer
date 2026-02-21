@@ -9,11 +9,24 @@ const canvas = document.getElementById('viz-canvas');
 const ctx = canvas.getContext('2d');
 const statPaths = document.getElementById('stat-paths');
 const statOpt = document.getElementById('stat-opt');
+const statPhase = document.getElementById('stat-phase');
+const statDist = document.getElementById('stat-dist');
+const statOrigDist = document.getElementById('stat-orig-dist');
+const statSavings = document.getElementById('stat-savings');
+const statIter = document.getElementById('stat-iter');
+const graphContainer = document.getElementById('graph-container');
+const graphCanvas = document.getElementById('graph-canvas');
+const graphCtx = graphCanvas.getContext('2d');
 
 let currentJobId = null;
 let originalPaths = [];
 let optimizedPaths = [];
 let bounds = { minX: 0, maxX: 100, minY: 0, maxY: 100 };
+let distHistory = [];
+let currentPhase = 0;
+let graphAnimating = false;
+let animationToken = 0;
+let pendingComplete = null;
 
 function setStatus(text, active = false) {
     statusText.textContent = `STATUS: ${text}`;
@@ -34,8 +47,21 @@ function resizeCanvas() {
     const rect = canvas.parentElement.getBoundingClientRect();
     canvas.width = rect.width;
     canvas.height = rect.height;
+    
+    if (graphContainer.classList.contains('visible')) {
+        resizeGraphCanvas();
+    }
+    
     draw();
+    drawGraph();
 }
+
+function resizeGraphCanvas() {
+    const graphRect = graphContainer.getBoundingClientRect();
+    graphCanvas.width = graphRect.width;
+    graphCanvas.height = graphRect.height;
+}
+
 window.addEventListener('resize', resizeCanvas);
 
 btnUpload.addEventListener('click', () => fileInput.click());
@@ -50,9 +76,15 @@ fileInput.addEventListener('change', async (e) => {
     btnDownload.classList.add('hidden');
     
     // Reset state
+    animationToken++;
     originalPaths = [];
     optimizedPaths = [];
+    distHistory = [];
+    currentPhase = 0;
+    graphAnimating = false;
+    pendingComplete = null;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    graphContainer.classList.remove('visible');
     
     setStatus('PARSING FILE', true);
     log('UPLOADING AND PARSING G-CODE...', 'normal');
@@ -74,6 +106,11 @@ fileInput.addEventListener('change', async (e) => {
         
         statPaths.textContent = `0 / ${originalPaths.length}`;
         statOpt.textContent = '0%';
+        statPhase.textContent = 'IDLE';
+        statOrigDist.textContent = '---';
+        statDist.textContent = '---';
+        statSavings.textContent = '---';
+        statIter.textContent = '---';
         
         calculateBounds(originalPaths);
         resizeCanvas();
@@ -103,6 +140,15 @@ btnDownload.addEventListener('click', () => {
     }
 });
 
+function finalizeUI() {
+    log('OPTIMIZATION SEQUENCE COMPLETE.', 'accent');
+    statPhase.textContent = 'COMPLETE';
+    setStatus('COMPLETE', false);
+    btnDownload.classList.remove('hidden');
+    btnUpload.classList.remove('disabled');
+    btnUpload.disabled = false;
+}
+
 function connectWebSocket(jobId) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws/${jobId}`);
@@ -116,19 +162,50 @@ function connectWebSocket(jobId) {
         
         if (data.type === 'log') {
             log(data.msg);
+            
         } else if (data.type === 'progress') {
-            optimizedPaths.push(data.latest_path);
-            const percent = Math.round((data.current / data.total) * 100);
-            statPaths.textContent = `${data.current} / ${data.total}`;
-            statOpt.textContent = `${percent}%`;
+            currentPhase = data.phase;
+            
+            if (data.phase === 1) {
+                statPhase.textContent = 'PHASE 1: GREEDY NN';
+                if (data.latest_path) {
+                    optimizedPaths.push(data.latest_path);
+                }
+                const percent = Math.round((data.current / data.total) * 100);
+                statPaths.textContent = `${data.current} / ${data.total}`;
+                statOpt.textContent = `${percent}%`;
+                draw();
+            }
+            
+        } else if (data.type === 'phase2_result') {
+            currentPhase = 2;
+            statPhase.textContent = 'PHASE 2: 2-OPT';
+            statOpt.textContent = '100%';
+            
+            // Update stats
+            statOrigDist.textContent = data.original_dist.toFixed(1) + ' mm';
+            
+            // Update paths to final ordering
+            if (data.paths && data.paths.length > 0) {
+                optimizedPaths = data.paths;
+            }
             draw();
+            
+            // Show graph and start animation
+            graphContainer.classList.add('visible');
+            // Use rAF to ensure container has layout before sizing the canvas
+            requestAnimationFrame(() => {
+                resizeGraphCanvas();
+                startGraphAnimation(data.dist_history, data.iterations, data.final_dist, data.original_dist);
+            });
+            
         } else if (data.type === 'complete') {
-            log('OPTIMIZATION SEQUENCE COMPLETE.', 'accent');
-            setStatus('COMPLETE', false);
-            btnDownload.classList.remove('hidden');
-            btnUpload.classList.remove('disabled');
-            btnUpload.disabled = false;
             ws.close();
+            if (graphAnimating) {
+                pendingComplete = true;
+            } else {
+                finalizeUI();
+            }
         }
     };
 
@@ -136,6 +213,50 @@ function connectWebSocket(jobId) {
         log('WEBSOCKET ERROR DETECTED.', 'accent');
         setStatus('ERROR', false);
     };
+}
+
+function startGraphAnimation(fullHistory, iterations, finalDist, originalDist) {
+    const myToken = ++animationToken;
+    graphAnimating = true;
+    distHistory = [];
+    
+    let idx = 0;
+    const delay = Math.max(30, Math.min(120, 3000 / Math.max(1, fullHistory.length)));
+    
+    function step() {
+        if (myToken !== animationToken) return;
+        
+        if (idx < fullHistory.length) {
+            distHistory.push(fullHistory[idx]);
+            statDist.textContent = fullHistory[idx].toFixed(1) + ' mm';
+            
+            if (idx === 0) {
+                statIter.textContent = 'ORIG';
+            } else if (idx === 1) {
+                statIter.textContent = 'NN PASS';
+            } else {
+                statIter.textContent = `${idx - 1} / ${iterations}`;
+            }
+            
+            const saved = ((originalDist - fullHistory[idx]) / originalDist * 100);
+            statSavings.textContent = saved.toFixed(1) + '%';
+            
+            drawGraph();
+            idx++;
+            setTimeout(step, delay);
+        } else {
+            graphAnimating = false;
+            statDist.textContent = finalDist.toFixed(1) + ' mm';
+            statIter.textContent = `${iterations}`;
+            
+            if (pendingComplete) {
+                pendingComplete = null;
+                finalizeUI();
+            }
+        }
+    }
+    
+    step();
 }
 
 function calculateBounds(paths) {
@@ -148,7 +269,6 @@ function calculateBounds(paths) {
             if (pt.y > maxY) maxY = pt.y;
         }
     }
-    // Add padding
     const padX = (maxX - minX) * 0.1 || 10;
     const padY = (maxY - minY) * 0.1 || 10;
     bounds = {
@@ -171,7 +291,7 @@ function transform(x, y) {
 
     return {
         x: (x - bounds.minX) * scale + offsetX,
-        y: h - ((y - bounds.minY) * scale + offsetY) // Invert Y for standard cartesian
+        y: h - ((y - bounds.minY) * scale + offsetY)
     };
 }
 
@@ -227,11 +347,11 @@ function draw() {
     }
     
     // Draw optimized travel moves (dashed orange)
-    ctx.strokeStyle = 'rgba(255, 107, 0, 0.6)';
-    ctx.setLineDash([4, 4]);
-    ctx.lineWidth = 1;
-    ctx.beginPath();
     if (optimizedPaths.length > 0) {
+        ctx.strokeStyle = 'rgba(255, 107, 0, 0.6)';
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
         let lastEnd = transform(0, 0);
         ctx.moveTo(lastEnd.x, lastEnd.y);
         for (const path of optimizedPaths) {
@@ -240,7 +360,88 @@ function draw() {
             lastEnd = transform(path[path.length-1].x, path[path.length-1].y);
             ctx.moveTo(lastEnd.x, lastEnd.y);
         }
+        ctx.stroke();
+        ctx.setLineDash([]);
     }
-    ctx.stroke();
-    ctx.setLineDash([]);
+}
+
+function drawGraph() {
+    const w = graphCanvas.width;
+    const h = graphCanvas.height;
+    if (w === 0 || h === 0 || distHistory.length < 2) return;
+    
+    graphCtx.clearRect(0, 0, w, h);
+    
+    const pad = { top: 18, bottom: 8, left: 6, right: 6 };
+    const plotW = w - pad.left - pad.right;
+    const plotH = h - pad.top - pad.bottom;
+    
+    // Draw grid
+    graphCtx.strokeStyle = 'rgba(160, 170, 181, 0.08)';
+    graphCtx.lineWidth = 1;
+    graphCtx.beginPath();
+    for (let i = pad.left; i < w - pad.right; i += 25) {
+        graphCtx.moveTo(i, pad.top);
+        graphCtx.lineTo(i, h - pad.bottom);
+    }
+    for (let i = pad.top; i < h - pad.bottom; i += 15) {
+        graphCtx.moveTo(pad.left, i);
+        graphCtx.lineTo(w - pad.right, i);
+    }
+    graphCtx.stroke();
+    
+    const maxDist = Math.max(...distHistory);
+    const minDist = Math.min(...distHistory);
+    const range = maxDist - minDist || 1;
+    
+    function toX(i) {
+        return pad.left + (i / Math.max(1, distHistory.length - 1)) * plotW;
+    }
+    function toY(val) {
+        return pad.top + (1 - (val - minDist) / range) * plotH;
+    }
+    
+    // Draw glow under line
+    graphCtx.strokeStyle = 'rgba(255, 107, 0, 0.12)';
+    graphCtx.lineWidth = 6;
+    graphCtx.beginPath();
+    for (let i = 0; i < distHistory.length; i++) {
+        const x = toX(i), y = toY(distHistory[i]);
+        if (i === 0) graphCtx.moveTo(x, y);
+        else graphCtx.lineTo(x, y);
+    }
+    graphCtx.stroke();
+    
+    // Draw main line
+    graphCtx.strokeStyle = '#ff6b00';
+    graphCtx.lineWidth = 1.5;
+    graphCtx.beginPath();
+    for (let i = 0; i < distHistory.length; i++) {
+        const x = toX(i), y = toY(distHistory[i]);
+        if (i === 0) graphCtx.moveTo(x, y);
+        else graphCtx.lineTo(x, y);
+    }
+    graphCtx.stroke();
+    
+    // Current point dot
+    const lastIdx = distHistory.length - 1;
+    const lx = toX(lastIdx), ly = toY(distHistory[lastIdx]);
+    graphCtx.fillStyle = '#ff6b00';
+    graphCtx.beginPath();
+    graphCtx.arc(lx, ly, 3, 0, Math.PI * 2);
+    graphCtx.fill();
+    
+    // Title label
+    graphCtx.fillStyle = 'rgba(160, 170, 181, 0.6)';
+    graphCtx.font = '9px "Share Tech Mono", monospace';
+    graphCtx.textAlign = 'left';
+    graphCtx.fillText('PEN-UP TRAVEL // CONVERGENCE', pad.left, 12);
+    
+    // Axis value labels
+    graphCtx.fillStyle = 'rgba(226, 232, 240, 0.5)';
+    graphCtx.font = '8px "Share Tech Mono", monospace';
+    graphCtx.textAlign = 'right';
+    graphCtx.fillText(maxDist.toFixed(0), w - pad.right, pad.top + 8);
+    graphCtx.fillText(minDist.toFixed(0), w - pad.right, h - pad.bottom - 2);
+    graphCtx.textAlign = 'left';
 }
