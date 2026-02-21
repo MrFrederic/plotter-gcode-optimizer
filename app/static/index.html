@@ -16,9 +16,68 @@
                 <div class="status-indicator" id="status-dot"></div>
                 <span id="status-text">STATUS: IDLE</span>
                 <span class="blinking-cursor">_</span>
+                <button id="btn-about" class="cyber-btn-icon" title="About">?</button>
                 <button id="btn-settings" class="cyber-btn-icon" title="Settings">&#9881;</button>
             </div>
         </header>
+
+        <!-- About Modal -->
+        <div id="about-overlay" class="settings-overlay hidden">
+            <div class="settings-panel about-panel">
+                <div class="panel-header">
+                    ABOUT PLOTTERTOOL
+                    <button id="btn-about-close" class="cyber-btn-icon">&#10005;</button>
+                </div>
+                <div class="settings-body about-body">
+                    <div class="about-section">
+                        <div class="about-title">SYSTEM OVERVIEW</div>
+                        <p>Integrated toolpath optimization platform for CNC pen plotters. Converts vector graphics to machine-executable G-code with automated path reduction and overlap elimination.</p>
+                        <p class="about-link"><a href="https://github.com/mfihs/plotter-gcode-optimizer" target="_blank">&#9733; VIEW SOURCE ON GITHUB</a></p>
+                    </div>
+                    
+                    <div class="about-section">
+                        <div class="about-title">SETTINGS REFERENCE</div>
+                        <div class="about-setting">
+                            <span class="about-setting-name">Z UP / Z DOWN</span>
+                            <span class="about-setting-desc">Pen lift and lower positions in mm. Detected automatically from G-code, adjust if needed.</span>
+                        </div>
+                        <div class="about-setting">
+                            <span class="about-setting-name">PEN WIDTH</span>
+                            <span class="about-setting-desc">Diameter of pen tip in mm. Used for overlap detection - lines hidden under other strokes are removed. Set to 0 to disable filtering.</span>
+                        </div>
+                        <div class="about-setting">
+                            <span class="about-setting-name">MIN VISIBILITY</span>
+                            <span class="about-setting-desc">Minimum visible percentage required to keep a line. At 50%, lines more than half-covered by other strokes are removed.</span>
+                        </div>
+                        <div class="about-setting">
+                            <span class="about-setting-name">MERGE THRESHOLD</span>
+                            <span class="about-setting-desc">Maximum gap in mm to merge adjacent paths. Eliminates pen lifts for tiny gaps (e.g., 0.5mm). Set to 0 to disable.</span>
+                        </div>
+                        <div class="about-setting">
+                            <span class="about-setting-name">DRAW / TRAVEL / Z SPEED</span>
+                            <span class="about-setting-desc">Feed rates in mm/min for drawing, rapid moves, and pen up/down movements respectively.</span>
+                        </div>
+                        <div class="about-setting">
+                            <span class="about-setting-name">CURVE TOLERANCE</span>
+                            <span class="about-setting-desc">SVG conversion accuracy in mm. Lower values = more points = smoother curves but larger files.</span>
+                        </div>
+                        <div class="about-setting">
+                            <span class="about-setting-name">HEADER / FOOTER</span>
+                            <span class="about-setting-desc">G-code commands added at start/end. Typically homing (G28) and parking sequences.</span>
+                        </div>
+                    </div>
+                    
+                    <div class="about-section about-disclaimer">
+                        <div class="about-title">DISCLAIMER</div>
+                        <p>This application was shamelessly vibe-coded by an individual whose close-to-zero coding skills are a source of deep, profound shame. The code quality reflects this unfortunate reality. Proceed with appropriate caution.</p>
+                    </div>
+                    
+                    <div class="about-footer">
+                        MFCORP INDUSTRIAL SOLUTIONS // 2026
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Settings Modal -->
         <div id="settings-overlay" class="settings-overlay hidden">

@@ -108,6 +108,10 @@ const btnSettingsSave = document.getElementById('btn-settings-save');
 const btnSettingsReset = document.getElementById('btn-settings-reset');
 const settingsOverlay = document.getElementById('settings-overlay');
 
+const btnAboutOpen = document.getElementById('btn-about');
+const btnAboutClose = document.getElementById('btn-about-close');
+const aboutOverlay = document.getElementById('about-overlay');
+
 const quickFeedrate = document.getElementById('quick-feedrate');
 const quickTravelSpeed = document.getElementById('quick-travel-speed');
 const quickPenWidth = document.getElementById('quick-pen-width');
@@ -187,6 +191,18 @@ btnSettingsSave.addEventListener('click', () => {
 
 btnSettingsReset.addEventListener('click', () => {
     applySettingsToForm(DEFAULT_SETTINGS);
+});
+
+// ─── About panel ──────────────────────────────────────────────────────────────
+
+btnAboutOpen.addEventListener('click', () => {
+    aboutOverlay.classList.remove('hidden');
+});
+
+btnAboutClose.addEventListener('click', () => aboutOverlay.classList.add('hidden'));
+
+aboutOverlay.addEventListener('click', (e) => {
+    if (e.target === aboutOverlay) aboutOverlay.classList.add('hidden');
 });
 
 // ─── Utilities ────────────────────────────────────────────────────────────────

@@ -367,6 +367,11 @@ canvas {
     padding: 4px 8px;
     font-family: 'Share Tech Mono', monospace;
     transition: all 0.2s;
+    min-width: 32px;
+    min-height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .cyber-btn-icon:hover {
@@ -508,6 +513,100 @@ canvas {
 .cyber-textarea:focus {
     outline: none;
     border-color: var(--accent);
+}
+
+/* ─── About Modal ─────────────────────────────────────────────────────────── */
+
+.about-panel {
+    max-width: 600px;
+}
+
+.about-body {
+    gap: 15px;
+}
+
+.about-section {
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--border);
+}
+
+.about-section:last-of-type {
+    border-bottom: none;
+}
+
+.about-title {
+    font-size: 0.7rem;
+    letter-spacing: 3px;
+    color: var(--accent);
+    margin-bottom: 10px;
+}
+
+.about-section p {
+    font-size: 0.8rem;
+    color: var(--primary);
+    line-height: 1.6;
+    margin: 0 0 8px 0;
+}
+
+.about-link a {
+    color: var(--secondary);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.about-link a:hover {
+    color: var(--accent);
+}
+
+.about-setting {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 10px;
+    padding-left: 10px;
+    border-left: 2px solid var(--border);
+}
+
+.about-setting-name {
+    font-size: 0.75rem;
+    color: var(--secondary);
+    letter-spacing: 1px;
+    margin-bottom: 3px;
+}
+
+.about-setting-desc {
+    font-size: 0.7rem;
+    color: var(--primary);
+    line-height: 1.5;
+    opacity: 0.85;
+}
+
+.about-disclaimer {
+    background: rgba(255, 107, 0, 0.05);
+    border: 1px solid rgba(255, 107, 0, 0.2);
+    padding: 15px;
+    margin: 0 -20px;
+    border-left: none;
+    border-right: none;
+}
+
+.about-disclaimer .about-title {
+    color: var(--accent);
+}
+
+.about-disclaimer p {
+    font-size: 0.75rem;
+    color: var(--accent);
+    opacity: 0.9;
+    font-style: italic;
+}
+
+.about-footer {
+    text-align: center;
+    font-size: 0.65rem;
+    letter-spacing: 2px;
+    color: var(--primary);
+    opacity: 0.5;
+    padding-top: 5px;
 }
 
 /* ─── SVG Preview Pane ────────────────────────────────────────────────────── */
