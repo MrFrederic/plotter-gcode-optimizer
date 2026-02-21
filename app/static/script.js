@@ -269,6 +269,7 @@ fileInput.addEventListener('change', async (e) => {
             resizeCanvas();
             btnOptimize.classList.remove('disabled');
             btnOptimize.disabled = false;
+            fileInput.value = '';
             setStatus('READY', false);
         } catch (err) {
             log(`ERROR: ${err.message}`, 'accent');
@@ -328,10 +329,13 @@ btnConvertSvg.addEventListener('click', async () => {
         resizeCanvas();
 
         btnConvertSvg.classList.add('hidden');
+        btnConvertSvg.classList.remove('disabled');
+        btnConvertSvg.disabled = false;
         btnOptimize.classList.remove('disabled');
         btnOptimize.disabled = false;
         btnUpload.classList.remove('disabled');
         btnUpload.disabled = false;
+        fileInput.value = '';
         setStatus('READY', false);
     } catch (err) {
         conversionDone = true;
@@ -372,6 +376,7 @@ function finalizeUI() {
     btnUpload.disabled = false;
     btnConvertSvg.classList.remove('disabled');
     btnConvertSvg.disabled = false;
+    fileInput.value = '';
 }
 
 function connectWebSocket(jobId) {
