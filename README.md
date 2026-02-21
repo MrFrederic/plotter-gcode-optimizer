@@ -3,6 +3,7 @@
 ## SYSTEM OVERVIEW
 
 Integrated toolpath optimization platform for CNC pen plotters. Converts vector graphics to machine-executable G-code with automated path reduction and overlap elimination. Real-time telemetry visualization included.
+<img width="1902" height="992" alt="image" src="https://github.com/user-attachments/assets/334fd7a2-fb94-46c4-9157-04aa995044b9" />
 
 **CORE FUNCTIONS:**
 - G-code sequence parsing and reordering
