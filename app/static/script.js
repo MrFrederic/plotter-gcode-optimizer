@@ -505,7 +505,7 @@ btnOptimize.addEventListener('click', async () => {
 
 btnDownload.addEventListener('click', () => {
     if (currentJobId) {
-        window.location.href = `/download/${currentJobId}`;
+        window.location.href = `download/${currentJobId}`;
     }
 });
 
