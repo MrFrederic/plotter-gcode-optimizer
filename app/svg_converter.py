@@ -18,16 +18,19 @@ def convert_svg_to_gcode(svg_bytes: bytes, settings: dict) -> str:
     """Convert SVG content to plotter G-code.
 
     Steps:
-    1. Write the SVG bytes to a temporary file.
-    2. Use svg2gcode to parse the SVG and compile to laser G-code.
+    1. Write the SVG bytes to a temporary file (svg2gcode requires a file path).
+    2. Parse the SVG into curves and compile to laser G-code in memory.
     3. Post-process: replace M3/M5 laser commands with Z-axis pen movements.
 
     Args:
         svg_bytes: Raw bytes of the SVG file.
-        settings:  Dict with optional keys: z_up, z_down, feedrate, cutting_speed.
+        settings:  Dict with optional keys: z_up, z_down, feedrate, curve_tolerance.
 
     Returns:
         Plotter-compatible G-code as a string.
+
+    Raises:
+        ValueError: If the SVG contains no drawable path elements.
     """
     z_up = float(settings.get("z_up", 2.0))
     z_down = float(settings.get("z_down", 0.0))
@@ -35,10 +38,12 @@ def convert_svg_to_gcode(svg_bytes: bytes, settings: dict) -> str:
     # curve_tolerance maps to svg2gcode pixel_size (curve discretization step in mm)
     curve_tolerance = float(settings.get("curve_tolerance") or 0.1)
 
+    # svg2gcode's parse_file requires an actual file path, so we still need a
+    # temporary file for the SVG input — but we compile entirely in memory to
+    # avoid the issue where compile_to_file silently skips writing the output
+    # file when no path body is generated.
     with tempfile.TemporaryDirectory() as tmpdir:
         svg_path = os.path.join(tmpdir, "input.svg")
-        gcode_path = os.path.join(tmpdir, "output.gcode")
-
         with open(svg_path, "wb") as f:
             f.write(svg_bytes)
 
@@ -69,10 +74,20 @@ def convert_svg_to_gcode(svg_bytes: bytes, settings: dict) -> str:
         )
 
         curves = parse_file(svg_path)
-        compiler.compile_to_file(gcode_path, svg_path, curves)
+        # Set svg_file_name so gcode_file_header() has access to the source path
+        compiler.svg_file_name = svg_path
+        compiler.append_curves(curves)
 
-        with open(gcode_path, "r") as f:
-            raw_gcode = f.read()
+        body = compiler.compile()
+        if not body:
+            raise ValueError(
+                "No drawable path elements found in the SVG. "
+                "Make sure path elements are present and use a stroke colour."
+            )
+
+        header = "\n".join(compiler.header) + "\n"
+        footer = "\n".join(compiler.footer) + "\n"
+        raw_gcode = compiler.gcode_file_header() + header + body + "\n" + footer
 
     return _laser_to_plotter(raw_gcode, z_up=z_up, z_down=z_down)
 
