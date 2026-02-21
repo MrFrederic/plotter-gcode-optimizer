@@ -8,3 +8,4 @@ services:
       - ./app:/app/app
     environment:
       - PYTHONUNBUFFERED=1
+      - BASE_PATH=${BASE_PATH:-}

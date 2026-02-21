@@ -1,10 +1,14 @@
+import os
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.routers import gcode, svg as svg_router
 
-app = FastAPI()
+# Support hosting under a base path (e.g., /plotter-tool)
+BASE_PATH = os.getenv("BASE_PATH", "")
+
+app = FastAPI(root_path=BASE_PATH)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 

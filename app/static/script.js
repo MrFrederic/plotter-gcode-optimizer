@@ -372,7 +372,7 @@ fileInput.addEventListener('change', async (e) => {
         formData.append('settings', JSON.stringify(settings));
 
         try {
-            const response = await fetch('/upload', { method: 'POST', body: formData });
+            const response = await fetch('upload', { method: 'POST', body: formData });
             if (!response.ok) {
                 const err = await response.json();
                 throw new Error(err.detail || response.statusText);
@@ -437,7 +437,7 @@ btnConvertSvg.addEventListener('click', async () => {
     formData.append('settings', JSON.stringify(settings));
 
     try {
-        const response = await fetch('/upload-svg', { method: 'POST', body: formData });
+        const response = await fetch('upload-svg', { method: 'POST', body: formData });
         conversionDone = true;
         clearInterval(progressInterval);
         svgProgressBar.style.width = '100%';
@@ -557,7 +557,8 @@ function finalizeUI() {
 
 function connectWebSocket(jobId) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/${jobId}`);
+    const basePath = window.location.pathname.replace(/\/+$/, '');
+    const ws = new WebSocket(`${protocol}//${window.location.host}${basePath}/ws/${jobId}`);
 
     ws.onopen = () => {
         setStatus('OPTIMIZING', true);
