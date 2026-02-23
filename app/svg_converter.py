@@ -10,6 +10,10 @@ import os
 import re
 import tempfile
 import xml.etree.ElementTree as ET
+import numpy as np
+from svgpathtools import parse_path
+from shapely.geometry import Polygon, MultiPolygon, LineString, MultiLineString, GeometryCollection
+from shapely.affinity import scale
 
 from svg2gcode.svg_to_gcode.compiler import Compiler, interfaces
 from svg2gcode.svg_to_gcode.svg_parser import parse_file
@@ -170,7 +174,7 @@ def _convert_shapes_in_tree(parent: ET.Element):
         parent.insert(i, new)
 
 
-def _preprocess_svg(svg_bytes: bytes) -> bytes:
+def _preprocess_svg(svg_bytes: bytes, settings: dict = None) -> bytes:
     """Normalise SVG: convert basic shapes (rect, circle, …) to <path> elements."""
     try:
         text = svg_bytes.decode("utf-8", errors="replace")
@@ -178,11 +182,201 @@ def _preprocess_svg(svg_bytes: bytes) -> bytes:
         text_clean = _XML_DECL_RE.sub("", text).strip()
         root = ET.fromstring(text_clean)
         _convert_shapes_in_tree(root)
+        
+        if settings and settings.get("offset_closed_paths") and settings.get("pen_width", 0) > 0:
+            _offset_closed_paths(root, settings)
+            
         return ET.tostring(root, encoding="unicode").encode("utf-8")
     except ET.ParseError:
         # Malformed XML: return original bytes so svg2gcode can produce a clear error
         return svg_bytes
 
+def _offset_closed_paths(root: ET.Element, settings: dict):
+    pen_width = float(settings.get("pen_width", 0))
+    curve_tolerance = float(settings.get("curve_tolerance", 0.1))
+    
+    scale_factor = _compute_viewbox_scale_from_root(root)
+    scale_x = scale_factor[0] if scale_factor else 1.0
+    scale_y = scale_factor[1] if scale_factor else 1.0
+    
+    def ring_to_d(ring):
+        coords = list(ring.coords)
+        if not coords: return ""
+        res = f"M {coords[0][0]},{coords[0][1]} "
+        for x, y in coords[1:]:
+            res += f"L {x},{y} "
+        res += "Z"
+        return res
+    
+    for path_el in root.findall(f".//{{{_SVG_NS}}}path"):
+        d = path_el.get("d")
+        if not d: continue
+        
+        try:
+            path = parse_path(d)
+        except Exception:
+            continue
+            
+        polys = []
+        open_subpaths_d = []
+        
+        for subpath in path.continuous_subpaths():
+            if not subpath.isclosed():
+                open_subpaths_d.append(subpath.d())
+                continue
+                
+            points = []
+            for segment in subpath:
+                length = segment.length()
+                num_points = max(2, int(length / curve_tolerance))
+                for t in np.linspace(0, 1, num_points)[:-1]:
+                    c = segment.point(t)
+                    points.append((c.real, c.imag))
+            if len(points) >= 3:
+                polys.append(Polygon(points))
+                
+        if not polys:
+            continue
+        
+        # Process each polygon individually so collapsed ones get centerlines
+        new_d = []
+        for poly in polys:
+            scaled_poly = scale(poly, xfact=scale_x, yfact=scale_y, origin=(0,0))
+            offset_geom = scaled_poly.buffer(-pen_width / 2.0, join_style=2)
+            
+            if offset_geom.is_empty or offset_geom.area < 0.001:
+                # Feature too small for offset — collapse to centerline
+                centerline = _polygon_to_centerline(scaled_poly)
+                if centerline is not None:
+                    centerline = scale(centerline, xfact=1.0/scale_x, yfact=1.0/scale_y, origin=(0,0))
+                    new_d.extend(_linestring_to_d(centerline))
+            else:
+                offset_geom = scale(offset_geom, xfact=1.0/scale_x, yfact=1.0/scale_y, origin=(0,0))
+                geoms = offset_geom.geoms if isinstance(offset_geom, MultiPolygon) else [offset_geom]
+                for g in geoms:
+                    if g.is_empty: continue
+                    new_d.append(ring_to_d(g.exterior))
+                    for interior in g.interiors:
+                        new_d.append(ring_to_d(interior))
+                
+        new_d.extend(open_subpaths_d)
+        path_el.set("d", " ".join(new_d))
+
+
+def _polygon_to_centerline(poly):
+    """Collapse a thin polygon into a single open stroke along its longest axis."""
+    if poly.is_empty:
+        return None
+    
+    # Use Shapely's Voronoi-based approach via medial axis approximation:
+    # Erode progressively until we find the last surviving line, or
+    # simply use the longest axis of the oriented minimum bounding rectangle.
+    
+    # Get the oriented minimum bounding rectangle
+    obb = poly.minimum_rotated_rectangle
+    if obb is None or obb.is_empty:
+        return None
+    
+    coords = list(obb.exterior.coords)
+    # The OBB has 5 coords (closed ring). Find the two longest edges to get the long axis.
+    edges = []
+    for i in range(4):
+        dx = coords[i+1][0] - coords[i][0]
+        dy = coords[i+1][1] - coords[i][1]
+        length = (dx*dx + dy*dy) ** 0.5
+        edges.append((length, i))
+    edges.sort(reverse=True)
+    
+    # Long axis: midpoints of the two short edges
+    long_idx = edges[0][1]
+    # The two short edges are at indices (long_idx+1)%4 and (long_idx+3)%4
+    short1_idx = (long_idx + 1) % 4
+    short2_idx = (long_idx + 3) % 4
+    
+    mid1 = ((coords[short1_idx][0] + coords[short1_idx+1][0]) / 2,
+            (coords[short1_idx][1] + coords[short1_idx+1][1]) / 2)
+    mid2 = ((coords[short2_idx][0] + coords[short2_idx+1][0]) / 2,
+            (coords[short2_idx][1] + coords[short2_idx+1][1]) / 2)
+    
+    # Clip this centerline to the actual polygon boundary
+    axis_line = LineString([mid1, mid2])
+    clipped = poly.intersection(axis_line)
+    
+    if clipped.is_empty:
+        return None
+    
+    return clipped
+
+
+def _linestring_to_d(geom):
+    """Convert a LineString or MultiLineString to SVG path d strings (open paths)."""
+    result = []
+    lines = []
+    if isinstance(geom, LineString):
+        lines = [geom]
+    elif isinstance(geom, (MultiLineString, GeometryCollection)):
+        lines = [g for g in geom.geoms if isinstance(g, LineString)]
+    else:
+        return result
+    
+    for line in lines:
+        coords = list(line.coords)
+        if len(coords) < 2:
+            continue
+        d = f"M {coords[0][0]},{coords[0][1]} "
+        for x, y in coords[1:]:
+            d += f"L {x},{y} "
+        result.append(d.strip())
+    
+    return result
+
+def _compute_viewbox_scale_from_root(root: ET.Element) -> tuple[float, float] | None:
+    viewbox_attr = root.get("viewBox")
+    width_attr = root.get("width")
+    height_attr = root.get("height")
+
+    if not viewbox_attr:
+        if width_attr and height_attr:
+            vp_width_mm = _length_to_mm(width_attr)
+            vp_height_mm = _length_to_mm(height_attr)
+            vp_width_num, _ = _parse_length(width_attr)
+            vp_height_num, _ = _parse_length(height_attr)
+            if vp_width_num > 0 and vp_height_num > 0:
+                scale_x = vp_width_mm / vp_width_num
+                scale_y = vp_height_mm / vp_height_num
+                if abs(scale_x - 1.0) > 0.0001 or abs(scale_y - 1.0) > 0.0001:
+                    return (scale_x, scale_y)
+        return None
+
+    vb_parts = viewbox_attr.split()
+    if len(vb_parts) < 4:
+        return None
+
+    try:
+        vb_width = float(vb_parts[2])
+        vb_height = float(vb_parts[3])
+    except (ValueError, IndexError):
+        return None
+
+    if vb_width <= 0 or vb_height <= 0:
+        return None
+
+    if not width_attr or not height_attr:
+        return None
+
+    vp_width_mm = _length_to_mm(width_attr)
+    vp_height_mm = _length_to_mm(height_attr)
+
+    if vp_width_mm <= 0 or vp_height_mm <= 0:
+        return None
+
+    scale_x = vp_width_mm / vb_width
+    scale_y = vp_height_mm / vb_height
+
+    if abs(scale_x - 1.0) < 0.0001 and abs(scale_y - 1.0) < 0.0001:
+        return None
+
+    return (scale_x, scale_y)
 
 def _compute_viewbox_scale(svg_bytes: bytes) -> tuple[float, float] | None:
     """Compute the scale factor to convert viewBox units to mm.
@@ -285,7 +479,7 @@ def convert_svg_to_gcode(svg_bytes: bytes, settings: dict) -> str:
     curve_tolerance = float(settings.get("curve_tolerance") or 0.1)
 
     # Normalise shapes → paths before handing to svg2gcode
-    processed_svg = _preprocess_svg(svg_bytes)
+    processed_svg = _preprocess_svg(svg_bytes, settings)
 
     # Compute scale factor to convert viewBox units to mm
     # This corrects the common case where viewBox dimensions differ from viewport dimensions

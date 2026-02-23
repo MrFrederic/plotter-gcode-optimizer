@@ -286,9 +286,9 @@ def _apply_settings(opt: GcodeOptimizer, settings: dict):
     if "feedrate" in settings:
         opt.feedrate = float(settings["feedrate"])
     if "travel_speed" in settings:
-        opt.travel_speed = float(settings["travel_speed"])
+        opt.travel_speed = float(settings["travel_speed"]) if settings["travel_speed"] else None
     if "z_speed" in settings:
-        opt.z_speed = float(settings["z_speed"])
+        opt.z_speed = float(settings["z_speed"]) if settings["z_speed"] else None
     if "gcode_header" in settings:
         opt.gcode_header = str(settings["gcode_header"])
     if "gcode_footer" in settings:

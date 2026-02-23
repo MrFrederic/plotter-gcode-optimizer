@@ -108,6 +108,10 @@
                             <label>MIN VISIBILITY (%)</label>
                             <input type="number" id="set-visibility-threshold" step="5" min="0" max="100" class="cyber-input" title="Minimum percentage of a line's drawn area that must be visible (not covered by other lines) to keep it.">
                         </div>
+                        <div class="settings-row">
+                            <label>OFFSET CLOSED PATHS</label>
+                            <input type="checkbox" id="set-offset-closed-paths" class="cyber-checkbox" title="Offset closed paths inwards by half the pen width to keep the stroke inside the shape.">
+                        </div>
                     </div>
                     <div class="settings-group">
                         <div class="settings-label">PATH MERGING</div>
@@ -124,11 +128,11 @@
                         </div>
                         <div class="settings-row">
                             <label>TRAVEL SPEED (mm/min)</label>
-                            <input type="number" id="set-travel-speed" step="100" min="1" class="cyber-input">
+                            <input type="number" id="set-travel-speed" step="100" min="1" class="cyber-input" placeholder="Optional">
                         </div>
                         <div class="settings-row">
                             <label>Z SPEED (mm/min)</label>
-                            <input type="number" id="set-z-speed" step="50" min="1" class="cyber-input">
+                            <input type="number" id="set-z-speed" step="50" min="1" class="cyber-input" placeholder="Optional">
                         </div>
                     </div>
                     <div class="settings-group">
@@ -167,7 +171,7 @@
                     </div>
                     <div class="settings-row">
                         <label>TRAVEL SPEED (mm/min)</label>
-                        <input type="number" id="quick-travel-speed" step="100" min="1" class="cyber-input">
+                        <input type="number" id="quick-travel-speed" step="100" min="1" class="cyber-input" placeholder="Optional">
                     </div>
                     <div class="settings-row">
                         <label>PEN WIDTH (mm)</label>

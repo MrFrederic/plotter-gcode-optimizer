@@ -60,12 +60,12 @@ int two_opt(int n,
     hist[0] = total_penup(sx, sy, ex, ey, n);
     if (n <= 1) return 0;
 
-    int iter = 0, improved = 1;
+    int iter = 0, improved = 1, no_improve_count = 0;
     double start_time = get_time_sec();
     double last_improvement_time = start_time;
     double best_dist = hist[0];
 
-    while (improved && iter < max_iter) {
+    while (no_improve_count < 50 && iter < max_iter) {
         double current_time = get_time_sec();
         if (current_time - start_time > 60.0) {
             break; // Stop after 1 minute
@@ -121,6 +121,13 @@ int two_opt(int n,
         }
 
         hist[iter] = total_penup(sx, sy, ex, ey, n);
+        
+        // Track consecutive cycles without improvement
+        if (improved) {
+            no_improve_count = 0;  // Reset counter on improvement
+        } else {
+            no_improve_count++;    // Increment counter on no improvement
+        }
         
         // Check if the improvement is considerable (e.g., > 0.1%)
         if (best_dist - hist[iter] > best_dist * 0.001) {

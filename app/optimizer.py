@@ -7,6 +7,19 @@ import subprocess
 def dist(p1, p2):
     return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
 
+def get_dir(p1, p2):
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    l = math.hypot(dx, dy)
+    if l == 0: return (0.0, 0.0)
+    return (dx/l, dy/l)
+
+def angle_between(v1, v2):
+    if v1 == (0.0, 0.0) or v2 == (0.0, 0.0): return 0.0
+    dot = v1[0]*v2[0] + v1[1]*v2[1]
+    dot = max(-1.0, min(1.0, dot))
+    return math.acos(dot)
+
 # --- Native 2-opt library (compiled from C) ---
 _two_opt_lib = None
 
@@ -119,6 +132,43 @@ class GcodeOptimizer:
                 else:
                     if is_drawing:
                         current_path.append((current_x, current_y))
+            elif cmd in ('G2', 'G3'):
+                # Arc interpolation
+                i, j = 0.0, 0.0
+                for part in parts[1:]:
+                    if part.startswith('I'): i = float(part[1:])
+                    elif part.startswith('J'): j = float(part[1:])
+                
+                if is_drawing and x is not None and y is not None:
+                    # Approximate arc with line segments
+                    cx = current_x + i
+                    cy = current_y + j
+                    
+                    r = math.hypot(i, j)
+                    if r > 0:
+                        start_angle = math.atan2(-j, -i)
+                        end_angle = math.atan2(y - cy, x - cx)
+                        
+                        if cmd == 'G2': # Clockwise
+                            if end_angle > start_angle:
+                                end_angle -= 2 * math.pi
+                        else: # Counter-clockwise
+                            if end_angle < start_angle:
+                                end_angle += 2 * math.pi
+                                
+                        angle_diff = abs(end_angle - start_angle)
+                        # Use a fixed number of segments per radian, or based on radius
+                        num_segments = max(2, int(angle_diff * r / 0.5)) # 0.5mm tolerance
+                        
+                        for step in range(1, num_segments + 1):
+                            t = step / num_segments
+                            angle = start_angle + t * (end_angle - start_angle)
+                            px = cx + r * math.cos(angle)
+                            py = cy + r * math.sin(angle)
+                            current_path.append((px, py))
+                            
+                    current_x = x
+                    current_y = y
         
         if is_drawing and len(current_path) > 1:
             paths.append(Path(current_path))
@@ -144,6 +194,7 @@ class GcodeOptimizer:
         unvisited = paths.copy()
         optimized = []
         current_pos = (0.0, 0.0)
+        current_dir = (0.0, 0.0)
         progress_history = []  # [(path_index, was_reversed, cumulative_travel)]
         cumulative_travel = 0.0
         
@@ -158,27 +209,57 @@ class GcodeOptimizer:
             best_score = float('inf')
             reverse_best = False
             best_travel = 0.0
+            best_dir = (0.0, 0.0)
             
             for p in unvisited:
                 d_start = dist(current_pos, p.start)
                 d_end = dist(current_pos, p.end)
                 
-                score_start = d_start + (p.length * 0.1)
-                score_end = d_end + (p.length * 0.1)
+                # Calculate angle punishment
+                angle_start = 0.0
+                angle_end = 0.0
+                
+                if current_dir != (0.0, 0.0):
+                    if d_start > 0:
+                        dir_to_start = get_dir(current_pos, p.start)
+                        angle_start = angle_between(current_dir, dir_to_start)
+                    elif len(p.points) > 1:
+                        dir_to_start = get_dir(p.points[0], p.points[1])
+                        angle_start = angle_between(current_dir, dir_to_start)
+                        
+                    if d_end > 0:
+                        dir_to_end = get_dir(current_pos, p.end)
+                        angle_end = angle_between(current_dir, dir_to_end)
+                    elif len(p.points) > 1:
+                        dir_to_end = get_dir(p.points[-1], p.points[-2])
+                        angle_end = angle_between(current_dir, dir_to_end)
+                
+                # Punishment factor: 5 units per radian
+                punishment_start = angle_start * 5.0
+                punishment_end = angle_end * 5.0
+                
+                score_start = d_start + (p.length * 0.1) + punishment_start
+                score_end = d_end + (p.length * 0.1) + punishment_end
                 
                 if score_start < best_score:
                     best_score = score_start
                     best_path = p
                     reverse_best = False
                     best_travel = d_start
+                    if len(p.points) > 1:
+                        best_dir = get_dir(p.points[-2], p.points[-1])
                 if score_end < best_score:
                     best_score = score_end
                     best_path = p
                     reverse_best = True
                     best_travel = d_end
+                    if len(p.points) > 1:
+                        best_dir = get_dir(p.points[1], p.points[0])
             
             if reverse_best:
                 best_path.reverse()
+            
+            current_dir = best_dir
             
             # Record original index for animation
             orig_idx = original_paths.index(best_path) if best_path in original_paths else -1
@@ -413,15 +494,19 @@ class GcodeOptimizer:
             for line in self.gcode_header.splitlines():
                 if line.strip():
                     out.append(line.strip())
-        out.append(f"G0 Z{self.z_up:.2f} F{self.z_speed:.0f} ; Pen up (controlled Z speed)")
+        
+        z_speed_str = f" F{self.z_speed:.0f}" if self.z_speed else ""
+        travel_speed_str = f" F{self.travel_speed:.0f}" if self.travel_speed else ""
+        
+        out.append(f"G0 Z{self.z_up:.2f}{z_speed_str} ; Pen up")
 
         for p in paths:
             start = p.start
-            out.append(f"G0 X{start[0]:.3f} Y{start[1]:.3f} F{self.travel_speed:.0f}")
-            out.append(f"G0 Z{self.z_down:.2f} F{self.z_speed:.0f}")
+            out.append(f"G0 X{start[0]:.3f} Y{start[1]:.3f}{travel_speed_str}")
+            out.append(f"G0 Z{self.z_down:.2f}{z_speed_str}")
             for pt in p.points[1:]:
                 out.append(f"G1 X{pt[0]:.3f} Y{pt[1]:.3f} F{self.feedrate:.0f}")
-            out.append(f"G0 Z{self.z_up:.2f} F{self.z_speed:.0f}")
+            out.append(f"G0 Z{self.z_up:.2f}{z_speed_str}")
 
         if self.gcode_footer:
             for line in self.gcode_footer.splitlines():

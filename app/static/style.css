@@ -478,6 +478,39 @@ canvas {
     border-color: var(--accent);
 }
 
+.cyber-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border);
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s;
+}
+
+.cyber-checkbox:checked {
+    background: rgba(255, 107, 0, 0.2);
+    border-color: var(--accent);
+}
+
+.cyber-checkbox:checked::after {
+    content: 'X';
+    color: var(--accent);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 14px;
+}
+
+.cyber-checkbox:focus {
+    outline: none;
+    box-shadow: 0 0 5px rgba(255, 107, 0, 0.5);
+}
+
 .settings-actions {
     display: flex;
     gap: 10px;
