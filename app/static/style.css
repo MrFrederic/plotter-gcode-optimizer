@@ -428,7 +428,6 @@ canvas {
     gap: 20px;
     overflow-y: auto;
 }
-}
 
 .settings-group {
     display: flex;
