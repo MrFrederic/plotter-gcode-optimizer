@@ -1,0 +1,358 @@
+/* ─── PlotterTool React Frontend – Cyberpunk Theme ────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+:root {
+  --bg: #0a0e14;
+  --panel-bg: #0d1117;
+  --border: #1a2332;
+  --text: #c9d1d9;
+  --text-dim: #6e7681;
+  --accent: #ff9500;
+  --accent-dim: rgba(255,149,0,0.3);
+  --highlight: #ff9500;
+  --btn-bg: #161b22;
+  --btn-hover: #21262d;
+  --input-bg: #0d1117;
+  --success: #3fb950;
+  --error: #f85149;
+  --font-mono: 'Share Tech Mono', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-mono);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  height: 100vh;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Scanline overlay ────────────────────────────────────────────────────── */
+
+.scanline {
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.03) 2px,
+    rgba(0,0,0,0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 1000;
+}
+
+/* ─── Layout ──────────────────────────────────────────────────────────────── */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 8px;
+  gap: 8px;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+}
+
+header h1 {
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: var(--accent);
+}
+
+main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 8px;
+  min-height: 0;
+}
+
+/* ─── Panels ──────────────────────────────────────────────────────────────── */
+
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-header {
+  font-size: 11px;
+  letter-spacing: 2px;
+  padding: 8px 12px;
+  background: rgba(255,149,0,0.05);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.left-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.right-panel {
+  position: relative;
+}
+
+/* ─── Terminal ────────────────────────────────────────────────────────────── */
+
+.terminal {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.terminal div { word-break: break-all; }
+
+/* ─── Controls ────────────────────────────────────────────────────────────── */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.hidden { display: none !important; }
+
+.cyber-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  padding: 8px 16px;
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  text-decoration: none;
+  text-align: center;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.cyber-btn:hover { background: var(--btn-hover); border-color: var(--accent); }
+.cyber-btn.disabled, .cyber-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cyber-btn-icon {
+  font-family: var(--font-mono);
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+}
+.cyber-btn-icon:hover { color: var(--accent); }
+
+/* ─── Status bar ──────────────────────────────────────────────────────────── */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.status-indicator.active { background: var(--accent); animation: pulse 1s infinite; }
+.status-indicator.complete { background: var(--success); }
+.status-indicator.error { background: var(--error); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.blinking-cursor { animation: blink 1s step-end infinite; }
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ─── Canvas / Path preview ───────────────────────────────────────────────── */
+
+.path-preview-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.canvas-container {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+.canvas-container canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ─── Layer toggles ───────────────────────────────────────────────────────── */
+
+.layer-toggles {
+  display: flex;
+  gap: 12px;
+  padding: 6px 12px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  border-top: 1px solid var(--border);
+}
+
+.layer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.layer-toggle input { cursor: pointer; }
+
+/* ─── Stats overlay ───────────────────────────────────────────────────────── */
+
+.overlay-stats {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(10,14,20,0.85);
+  border: 1px solid var(--border);
+  padding: 10px 14px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  line-height: 1.8;
+  pointer-events: none;
+}
+
+.stat-row { color: var(--text-dim); }
+.stat-divider { height: 1px; background: var(--border); margin: 4px 0; }
+.highlight { color: var(--accent); }
+
+/* ─── Settings modal ──────────────────────────────────────────────────────── */
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.settings-panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  width: 440px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-body {
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.settings-group {
+  margin-bottom: 12px;
+}
+
+.settings-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.settings-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 11px;
+}
+
+.settings-row label {
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.settings-row-vertical {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.cyber-input, .cyber-textarea {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 8px;
+  width: 120px;
+}
+
+.cyber-textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.cyber-input:focus, .cyber-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.cyber-checkbox {
+  accent-color: var(--accent);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+/* ─── Scrollbar ───────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
