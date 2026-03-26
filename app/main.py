@@ -40,7 +40,7 @@ _frontend_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 _frontend_available = os.path.isdir(_frontend_dist)
 
 if _frontend_available:
-    app.mount("/app-assets", StaticFiles(directory=os.path.join(_frontend_dist, "assets")), name="frontend-assets")
+    app.mount("/app-assets", StaticFiles(directory=_frontend_dist), name="frontend-assets")
 
 
 @app.get("/v2")
